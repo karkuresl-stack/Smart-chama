@@ -176,7 +176,7 @@ document.getElementById('signupBtn').addEventListener('click', async () => {
   }
   authMessage.textContent = 'Sending password reset email…';
   const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-    redirectTo: 'https://karkuresl-stack.github.io/Smart-chama/smart_chama_supabase_ready-2.html'
+    redirectTo: 'https://karkuresl-stack.github.io/Smart-chama/reset-password.html'
   });
   authMessage.textContent = error
     ? error.message
