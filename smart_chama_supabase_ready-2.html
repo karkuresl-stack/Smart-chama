@@ -135,6 +135,7 @@ supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 supabaseScript.onload = () => {
   if (supabaseConfigured) supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 };
+ document.head.appendChild(supabaseScript);
 supabaseScript.onerror = () => { authMessage.textContent = 'Could not load the sign-in service. Check your internet connection.'; };
 document.getElementById('loginForm').addEventListener('submit', async e => {
   e.preventDefault();
