@@ -60,8 +60,8 @@ button:disabled{opacity:.5}
 <script>
 (() => {
   // Copy these two values from your existing Member Access file.
-  const SUPABASE_URL = "PASTE_YOUR_SUPABASE_PROJECT_URL";
-  const SUPABASE_KEY = "PASTE_YOUR_SUPABASE_PUBLISHABLE_KEY";
+  const SUPABASE_URL = 'https://kbrhjgnwbkszmjldbfor.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable__Tck9HRnjrqdLdbpH36YPQ_-7vpek8B';
 
   const $ = id => document.getElementById(id);
   const authStatus = $("authStatus");
@@ -81,8 +81,9 @@ button:disabled{opacity:.5}
   }
 
   function setup() {
-    if (SUPABASE_URL.startsWith('https://kbrhjgnwbkszmjldbfor.supabase.co';) ||
-        SUPABASE_KEY.startsWith('sb_publishable__Tck9HRnjrqdLdbpH36YPQ_-7vpek8B';)) {
+  if (SUPABASE_URL.includes("PASTE_YOUR_SUPABASE_PROJECT_URL") ||
+      SUPABASE_KEY.includes("PASTE_YOUR_SUPABASE_PUBLISHABLE_KEY")) {
+
       authStatus.textContent =
         "Setup required: copy your Supabase URL and publishable key into the code.";
       $("loginBtn").disabled = true;
