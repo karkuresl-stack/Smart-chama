@@ -4,68 +4,179 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Smart Chama | System Admin</title>
+<title>Smart Chama | Owner Admin</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box}
-body{margin:0;font-family:Arial,sans-serif;background:#f3f6f4;color:#18352b}
-header{background:#123f30;color:white;padding:22px 18px}
-header h1{margin:0;font-size:24px}
-header p{margin:7px 0 0;color:#d4e9dc;font-size:14px}
-main{max-width:850px;margin:24px auto;padding:0 15px}
-.card{background:white;border-radius:14px;padding:20px;margin-bottom:18px;box-shadow:0 3px 14px #18352b12}
-h2{font-size:19px;margin-top:0}
-label{display:block;font-weight:bold;margin:15px 0 7px}
+body{margin:0;background:#f2f6f3;color:#18352b;font-family:Arial,sans-serif}
+header{background:#123f30;color:white;padding:22px}
+header h1{margin:0} header p{margin-bottom:0;color:#d8eadf}
+main{max-width:700px;margin:24px auto;padding:0 14px}
+.card{background:white;padding:20px;border-radius:14px;margin-bottom:18px;box-shadow:0 3px 12px #0001}
+h2{margin-top:0;font-size:20px}
+label{display:block;font-weight:bold;margin:14px 0 6px}
 input,textarea{width:100%;padding:12px;border:1px solid #cbd8d0;border-radius:8px;font-size:16px}
-textarea{min-height:90px;resize:vertical}
-button{border:0;border-radius:8px;padding:12px 16px;font-size:15px;font-weight:bold;cursor:pointer}
+textarea{min-height:85px}
+button{border:0;border-radius:8px;padding:13px 16px;font-weight:bold;font-size:15px;cursor:pointer}
 .primary{background:#176b4b;color:white}
 .secondary{background:#e8f1eb;color:#18352b}
-.notice{background:#fff4d6;border-left:4px solid #c58a15;padding:13px;border-radius:5px;line-height:1.5}
-.muted{color:#66776d;font-size:14px;line-height:1.5}
-.status{margin-top:12px;line-height:1.5;overflow-wrap:anywhere}
-footer{text-align:center;padding:20px;color:#66776d;font-size:13px}
+button:disabled{opacity:.5}
+.status{padding:12px;background:#eef5ef;border-radius:8px;overflow-wrap:anywhere;line-height:1.5}
+.hidden{display:none}
+.small{font-size:13px;color:#627369;line-height:1.5}
 </style>
 </head>
 <body>
 <header>
-  <h1>Smart Chama</h1>
-  <p>System Owner Control Panel</p>
+<h1>Smart Chama</h1>
+<p>System Owner Administration</p>
 </header>
-
 <main>
-  <section class="card">
-    <h2>System administration</h2>
-    <p>Manage the chamas using your Smart Chama platform.</p>
-    <div class="notice">
-      <strong>Security setup pending</strong><br>
-      This panel must verify your system-owner permissions through Supabase before it can create groups or assign officers.
-    </div>
-    <p class="muted">Ordinary members will not be allowed to create chamas. The system owner creates each group and appoints its initial officers.</p>
-  </section>
+<section class="card">
+<h2>Owner sign-in</h2>
+<label for="email">Email address</label>
+<input id="email" type="email" autocomplete="username" placeholder="Your registered email">
+<label for="password">Password</label>
+<input id="password" type="password" autocomplete="current-password" placeholder="Your password">
+<p><button class="primary" id="loginBtn">Sign in</button>
+<button class="secondary" id="logoutBtn" disabled>Sign out</button></p>
+<div id="authStatus" class="status">Enter your existing Smart Chama account details.</div>
+</section>
 
-  <section class="card">
-    <h2>Create a chama</h2>
-    <label for="groupName">Chama name</label>
-    <input id="groupName" placeholder="e.g. Rising Stars SGH" disabled>
+<section class="card">
+<h2>Create a chama</h2>
+<p class="small">Only the account registered as system owner in Supabase can create a group.</p>
+<label for="groupName">Chama name</label>
+<input id="groupName" maxlength="120" placeholder="e.g. Rising Stars SGH">
+<label for="groupDescription">Description (optional)</label>
+<textarea id="groupDescription" maxlength="1000" placeholder="Purpose and details of the group"></textarea>
+<p><button class="primary" id="createBtn" disabled>Create chama</button></p>
+<div id="groupStatus" class="status">Sign in before creating a group.</div>
+</section>
 
-    <label for="groupDescription">Description</label>
-    <textarea id="groupDescription" placeholder="Purpose and details of the group" disabled></textarea>
-
-    <button class="primary" disabled>Create chama</button>
-    <p class="status" id="setupStatus">Group creation is locked until owner authorization is configured.</p>
-  </section>
-
-  <section class="card">
-    <h2>Planned controls</h2>
-    <p>• Create and manage multiple chamas</p>
-    <p>• Appoint chairpersons, secretaries and treasurers</p>
-    <p>• Review membership requests</p>
-    <p>• Monitor savings, loans and group activity</p>
-  </section>
-
-  <button class="secondary" onclick="location.href='index.html'">Back to dashboard</button>
+<button class="secondary" onclick="location.href='index.html'">Back to dashboard</button>
 </main>
 
-<footer>Smart Chama · Secure group management</footer>
+<script>
+(() => {
+  // Copy these two values from your existing Member Access file.
+  const SUPABASE_URL = "PASTE_YOUR_SUPABASE_PROJECT_URL";
+  const SUPABASE_KEY = "PASTE_YOUR_SUPABASE_PUBLISHABLE_KEY";
+
+  const $ = id => document.getElementById(id);
+  const authStatus = $("authStatus");
+  const groupStatus = $("groupStatus");
+  let client = null;
+  let currentUser = null;
+  let busy = false;
+
+  function setSignedIn(user) {
+    currentUser = user || null;
+    $("loginBtn").disabled = !!user;
+    $("logoutBtn").disabled = !user;
+    $("createBtn").disabled = !user || busy;
+    authStatus.textContent = user
+      ? "Signed in as " + user.email + ". Owner permissions are checked by the database."
+      : "You are signed out.";
+  }
+
+  function setup() {
+    if (SUPABASE_URL.startsWith("PASTE_") ||
+        SUPABASE_KEY.startsWith("PASTE_")) {
+      authStatus.textContent =
+        "Setup required: copy your Supabase URL and publishable key into the code.";
+      $("loginBtn").disabled = true;
+      return false;
+    }
+    if (!window.supabase) {
+      authStatus.textContent = "Supabase library failed to load. Check your internet connection.";
+      $("loginBtn").disabled = true;
+      return false;
+    }
+    if (!client) {
+      client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    }
+    return true;
+  }
+
+  $("loginBtn").addEventListener("click", async () => {
+    if (!setup()) return;
+    authStatus.textContent = "Signing in…";
+    $("loginBtn").disabled = true;
+
+    const { data, error } = await client.auth.signInWithPassword({
+      email: $("email").value.trim(),
+      password: $("password").value
+    });
+
+    if (error) {
+      authStatus.textContent = "Sign-in failed: " + error.message;
+      $("loginBtn").disabled = false;
+      return;
+    }
+    setSignedIn(data.user);
+    groupStatus.textContent =
+      "Signed in. Enter a chama name to request owner-authorized creation.";
+  });
+
+  $("logoutBtn").addEventListener("click", async () => {
+    if (!client) return;
+    const { error } = await client.auth.signOut();
+    if (error) {
+      authStatus.textContent = "Sign-out failed: " + error.message;
+      return;
+    }
+    setSignedIn(null);
+    groupStatus.textContent = "Sign in before creating a group.";
+  });
+
+  $("createBtn").addEventListener("click", async () => {
+    if (!client || !currentUser || busy) return;
+
+    const name = $("groupName").value.trim();
+    const description = $("groupDescription").value.trim();
+
+    if (!name) {
+      groupStatus.textContent = "Enter a chama name first.";
+      return;
+    }
+
+    busy = true;
+    $("createBtn").disabled = true;
+    groupStatus.textContent = "Requesting secure group creation…";
+
+    const { data, error } = await client.rpc("admin_create_chama_group", {
+      p_name: name,
+      p_description: description || null
+    });
+
+    busy = false;
+    $("createBtn").disabled = !currentUser;
+
+    if (error) {
+      groupStatus.textContent =
+        "Group was not created: " + error.message;
+      return;
+    }
+
+    groupStatus.textContent =
+      "Chama created successfully. Group ID: " + data;
+    $("groupName").value = "";
+    $("groupDescription").value = "";
+  });
+
+  async function restoreSession() {
+    if (!setup()) return;
+    const { data, error } = await client.auth.getSession();
+    if (error) {
+      authStatus.textContent = "Could not restore session: " + error.message;
+      return;
+    }
+    setSignedIn(data.session ? data.session.user : null);
+  }
+
+  restoreSession();
+})();
+</script>
 </body>
 </html>
