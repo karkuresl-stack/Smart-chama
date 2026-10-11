@@ -1,0 +1,71 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Chama | System Admin</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f3f6f4;color:#18352b}
+header{background:#123f30;color:white;padding:22px 18px}
+header h1{margin:0;font-size:24px}
+header p{margin:7px 0 0;color:#d4e9dc;font-size:14px}
+main{max-width:850px;margin:24px auto;padding:0 15px}
+.card{background:white;border-radius:14px;padding:20px;margin-bottom:18px;box-shadow:0 3px 14px #18352b12}
+h2{font-size:19px;margin-top:0}
+label{display:block;font-weight:bold;margin:15px 0 7px}
+input,textarea{width:100%;padding:12px;border:1px solid #cbd8d0;border-radius:8px;font-size:16px}
+textarea{min-height:90px;resize:vertical}
+button{border:0;border-radius:8px;padding:12px 16px;font-size:15px;font-weight:bold;cursor:pointer}
+.primary{background:#176b4b;color:white}
+.secondary{background:#e8f1eb;color:#18352b}
+.notice{background:#fff4d6;border-left:4px solid #c58a15;padding:13px;border-radius:5px;line-height:1.5}
+.muted{color:#66776d;font-size:14px;line-height:1.5}
+.status{margin-top:12px;line-height:1.5;overflow-wrap:anywhere}
+footer{text-align:center;padding:20px;color:#66776d;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Smart Chama</h1>
+  <p>System Owner Control Panel</p>
+</header>
+
+<main>
+  <section class="card">
+    <h2>System administration</h2>
+    <p>Manage the chamas using your Smart Chama platform.</p>
+    <div class="notice">
+      <strong>Security setup pending</strong><br>
+      This panel must verify your system-owner permissions through Supabase before it can create groups or assign officers.
+    </div>
+    <p class="muted">Ordinary members will not be allowed to create chamas. The system owner creates each group and appoints its initial officers.</p>
+  </section>
+
+  <section class="card">
+    <h2>Create a chama</h2>
+    <label for="groupName">Chama name</label>
+    <input id="groupName" placeholder="e.g. Rising Stars SGH" disabled>
+
+    <label for="groupDescription">Description</label>
+    <textarea id="groupDescription" placeholder="Purpose and details of the group" disabled></textarea>
+
+    <button class="primary" disabled>Create chama</button>
+    <p class="status" id="setupStatus">Group creation is locked until owner authorization is configured.</p>
+  </section>
+
+  <section class="card">
+    <h2>Planned controls</h2>
+    <p>• Create and manage multiple chamas</p>
+    <p>• Appoint chairpersons, secretaries and treasurers</p>
+    <p>• Review membership requests</p>
+    <p>• Monitor savings, loans and group activity</p>
+  </section>
+
+  <button class="secondary" onclick="location.href='index.html'">Back to dashboard</button>
+</main>
+
+<footer>Smart Chama · Secure group management</footer>
+</body>
+</html>
