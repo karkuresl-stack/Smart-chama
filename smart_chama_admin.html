@@ -10,7 +10,8 @@
 *{box-sizing:border-box}
 body{margin:0;background:#f2f6f3;color:#18352b;font-family:Arial,sans-serif}
 header{background:#123f30;color:white;padding:22px}
-header h1{margin:0} header p{margin-bottom:0;color:#d8eadf}
+header h1{margin:0}
+header p{margin-bottom:0;color:#d8eadf}
 main{max-width:700px;margin:24px auto;padding:0 14px}
 .card{background:white;padding:20px;border-radius:14px;margin-bottom:18px;box-shadow:0 3px 12px #0001}
 h2{margin-top:0;font-size:20px}
@@ -22,7 +23,6 @@ button{border:0;border-radius:8px;padding:13px 16px;font-weight:bold;font-size:1
 .secondary{background:#e8f1eb;color:#18352b}
 button:disabled{opacity:.5}
 .status{padding:12px;background:#eef5ef;border-radius:8px;overflow-wrap:anywhere;line-height:1.5}
-.hidden{display:none}
 .small{font-size:13px;color:#627369;line-height:1.5}
 </style>
 </head>
@@ -31,6 +31,7 @@ button:disabled{opacity:.5}
 <h1>Smart Chama</h1>
 <p>System Owner Administration</p>
 </header>
+
 <main>
 <section class="card">
 <h2>Owner sign-in</h2>
@@ -38,8 +39,10 @@ button:disabled{opacity:.5}
 <input id="email" type="email" autocomplete="username" placeholder="Your registered email">
 <label for="password">Password</label>
 <input id="password" type="password" autocomplete="current-password" placeholder="Your password">
-<p><button class="primary" id="loginBtn">Sign in</button>
-<button class="secondary" id="logoutBtn" disabled>Sign out</button></p>
+<p>
+<button class="primary" id="loginBtn">Sign in</button>
+<button class="secondary" id="logoutBtn" disabled>Sign out</button>
+</p>
 <div id="authStatus" class="status">Enter your existing Smart Chama account details.</div>
 </section>
 
@@ -59,13 +62,14 @@ button:disabled{opacity:.5}
 
 <script>
 (() => {
-  // Copy these two values from your existing Member Access file.
+  // Existing Smart Chama Supabase configuration.
   const SUPABASE_URL = 'https://kbrhjgnwbkszmjldbfor.supabase.co';
   const SUPABASE_KEY = 'sb_publishable__Tck9HRnjrqdLdbpH36YPQ_-7vpek8B';
 
   const $ = id => document.getElementById(id);
   const authStatus = $("authStatus");
   const groupStatus = $("groupStatus");
+
   let client = null;
   let currentUser = null;
   let busy = false;
@@ -75,44 +79,98 @@ button:disabled{opacity:.5}
     $("loginBtn").disabled = !!user;
     $("logoutBtn").disabled = !user;
     $("createBtn").disabled = !user || busy;
+
     authStatus.textContent = user
-      ? "Signed in as " + user.email + ". Owner permissions are checked by the database."
+      ? "Signed in as " + user.email + ". Owner permission is checked by the database."
       : "You are signed out.";
+
+    if (!user) {
+      groupStatus.textContent = "Sign in before creating a group.";
+    }
   }
 
   function setup() {
-  if (SUPABASE_URL.includes("PASTE_YOUR_SUPABASE_PROJECT_URL") ||
-      SUPABASE_KEY.includes("PASTE_YOUR_SUPABASE_PUBLISHABLE_KEY")) {
-
-      authStatus.textContent =
-        "Setup required: copy your Supabase URL and publishable key into the code.";
-      $("loginBtn").disabled = true;
-      return false;
-    }
     if (!window.supabase) {
-      authStatus.textContent = "Supabase library failed to load. Check your internet connection.";
-      $("loginBtn").disabled = true;
+      authStatus.textContent =
+        "Supabase library failed to load. Check your internet connection.";
       return false;
     }
+
     if (!client) {
-      client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      client = window.supabase.createClient(
+        SUPABASE_URL,
+        SUPABASE_KEY
+      );
     }
+
     return true;
   }
 
-$("loginBtn").addEventListener("click", async () => {
-  if (!setup()) return;
+  // SIGN IN
+  $("loginBtn").addEventListener("click", async () => {
+    if (!setup()) return;
 
-  authStatus.textContent = "Connecting to Supabase...";
-  $("loginBtn").disabled = true;
+    const email = $("email").value.trim();
+    const password = $("password").value;
 
-  try {
-    const { data, error } = await client.auth.signInWithPassword({
-      email: $("email").value.trim(),
-      password: $("password").value
-    });
+    if (!email || !password) {
+      authStatus.textContent = "Enter your email and password.";
+      return;
+    }
+
+    $("loginBtn").disabled = true;
+    authStatus.textContent = "Connecting to Supabase...";
+
+    try {
+      const { data, error } = await client.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        authStatus.textContent = "Sign-in failed: " + error.message;
+        $("loginBtn").disabled = false;
+        return;
+      }
+
+      setSignedIn(data.user);
+      groupStatus.textContent =
+        "Signed in. Database owner permission will be checked when creating a group.";
+    } catch (err) {
+      authStatus.textContent =
+        "Connection error: " + (err.message || "Check your internet connection.");
+      $("loginBtn").disabled = false;
+    }
+  });
+
+  // SIGN OUT
   $("logoutBtn").addEventListener("click", async () => {
-        const name = $("groupName").value.trim();
+    if (!client) return;
+
+    $("logoutBtn").disabled = true;
+
+    try {
+      const { error } = await client.auth.signOut();
+
+      if (error) {
+        authStatus.textContent = "Sign-out failed: " + error.message;
+        $("logoutBtn").disabled = false;
+        return;
+      }
+
+      setSignedIn(null);
+    } catch (err) {
+      authStatus.textContent =
+        "Sign-out error: " + (err.message || "Please try again.");
+      $("logoutBtn").disabled = false;
+    }
+  });
+
+  // CREATE CHAMA — database verifies system-owner permission.
+  $("createBtn").addEventListener("click", async () => {
+    if (!client || !currentUser || busy) return;
+
+    const name = $("groupName").value.trim();
     const description = $("groupDescription").value.trim();
 
     if (!name) {
@@ -122,36 +180,55 @@ $("loginBtn").addEventListener("click", async () => {
 
     busy = true;
     $("createBtn").disabled = true;
-    groupStatus.textContent = "Requesting secure group creation…";
+    groupStatus.textContent = "Requesting secure group creation...";
 
-    const { data, error } = await client.rpc("admin_create_chama_group", {
-      p_name: name,
-      p_description: description || null
-    });
+    try {
+      const { data, error } = await client.rpc(
+        "admin_create_chama_group",
+        {
+          p_name: name,
+          p_description: description || null
+        }
+      );
 
-    busy = false;
-    $("createBtn").disabled = !currentUser;
+      if (error) {
+        groupStatus.textContent =
+          "Group was not created: " + error.message;
+        return;
+      }
 
-    if (error) {
       groupStatus.textContent =
-        "Group was not created: " + error.message;
-      return;
-    }
+        "Chama created successfully. Group ID: " + data;
 
-    groupStatus.textContent =
-      "Chama created successfully. Group ID: " + data;
-    $("groupName").value = "";
-    $("groupDescription").value = "";
+      $("groupName").value = "";
+      $("groupDescription").value = "";
+    } catch (err) {
+      groupStatus.textContent =
+        "Creation request failed: " + (err.message || "Please try again.");
+    } finally {
+      busy = false;
+      $("createBtn").disabled = !currentUser;
+    }
   });
 
+  // RESTORE EXISTING SESSION
   async function restoreSession() {
     if (!setup()) return;
-    const { data, error } = await client.auth.getSession();
-    if (error) {
-      authStatus.textContent = "Could not restore session: " + error.message;
-      return;
+
+    try {
+      const { data, error } = await client.auth.getSession();
+
+      if (error) {
+        authStatus.textContent =
+          "Could not restore session: " + error.message;
+        return;
+      }
+
+      setSignedIn(data.session ? data.session.user : null);
+    } catch (err) {
+      authStatus.textContent =
+        "Session check failed: " + (err.message || "Check your internet.");
     }
-    setSignedIn(data.session ? data.session.user : null);
   }
 
   restoreSession();
