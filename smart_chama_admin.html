@@ -112,20 +112,7 @@ $("loginBtn").addEventListener("click", async () => {
       password: $("password").value
     });
   $("logoutBtn").addEventListener("click", async () => {
-    if (!client) return;
-    const { error } = await client.auth.signOut();
-    if (error) {
-      authStatus.textContent = "Sign-out failed: " + error.message;
-      return;
-    }
-    setSignedIn(null);
-    groupStatus.textContent = "Sign in before creating a group.";
-  });
-
-  $("createBtn").addEventListener("click", async () => {
-    if (!client || !currentUser || busy) return;
-
-    const name = $("groupName").value.trim();
+        const name = $("groupName").value.trim();
     const description = $("groupDescription").value.trim();
 
     if (!name) {
