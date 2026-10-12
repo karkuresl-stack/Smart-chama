@@ -117,38 +117,7 @@ $("loginBtn").addEventListener("click", async () => {
       $("loginBtn").disabled = false;
       return;
     }
-
-    setSignedIn(data.user);
-    groupStatus.textContent =
-      "Signed in. Owner permission will be checked by the database.";
-
-  } catch (err) {
-    authStatus.textContent =
-      "Connection error: " + (err.message || "Check your internet.");
-    $("loginBtn").disabled = false;
-  }
-});
-
-
-
-
-    if (error) {
-      authStatus.textContent = "Sign-in failed: " + error.message;
-      $("loginBtn").disabled = false;
-      return;
-    }
-
-    setSignedIn(data.user);
-    groupStatus.textContent =
-      "Signed in. Owner permissions will be checked when creating a group.";
-
-  } catch (err) {
-    authStatus.textContent =
-      "Connection error: " + (err.message || "Check your internet connection.");
-    $("loginBtn").disabled = false;
-  }
-});
-    if (error) {
+    
       authStatus.textContent = "Sign-in failed: " + error.message;
       $("loginBtn").disabled = false;
       return;
