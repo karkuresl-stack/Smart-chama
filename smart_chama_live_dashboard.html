@@ -234,6 +234,38 @@ const roleNames = roleError
       '<p>Status: ' + safe(member.status) + '</p>' +
       '<p>Role: ' + safe(roleNames) + '</p>';
 
+if (member.status === 'pending') {
+  const approveButton = document.createElement('button');
+  approveButton.textContent = 'Approve Member';
+  approveButton.style.background = '#16803d';
+  approveButton.style.color = 'white';
+  approveButton.style.marginTop = '10px';
+
+  approveButton.addEventListener('click', async () => {
+    if (!confirm('Approve ' + member.member_number + '?')) return;
+
+    approveButton.disabled = true;
+    approveButton.textContent = 'Approving...';
+
+    const { error } = await db.rpc('approve_chama_member', {
+      p_membership_id: member.id
+    });
+
+    if (error) {
+      status.textContent = 'Approval failed: ' + error.message;
+      approveButton.disabled = false;
+      approveButton.textContent = 'Approve Member';
+      return;
+    }
+
+    status.textContent = 'Member approved successfully.';
+    await loadMembers(groupId);
+    await loadGroups();
+  });
+
+  card.appendChild(approveButton);
+}
+
     const removeButton = document.createElement('button');
 removeButton.textContent = 'Remove Member';
 removeButton.style.background = '#b42318';
