@@ -97,15 +97,41 @@ async function loadDeposits() {
   let query = db.from('savings_transactions')
     .select('id, member_id, amount, transaction_type, reference, status, transaction_date');
 
-  if (!isAdmin.data) {
-    query = query.in('group_id', officerGroups);
+let transactionQuery = db
+  .from('savings_transactions')
+  .select('id, member_id, amount, transaction_type, reference, status, transaction_date')
+  .eq('status', 'pending')
+  .eq('transaction_type', 'deposit')
+  .order('transaction_date', { ascending: false })
+  .limit(100);
+
+if (!isAdmin.data) {
+  const { data: groupMembers, error: groupMembersError } = await db
+    .from('chama_members')
+    .select('user_id')
+    .in('group_id', officerGroups)
+    .eq('status', 'active');
+
+  if (groupMembersError) {
+    message.textContent = 'Could not load group members: ' + groupMembersError.message;
+    return;
   }
 
-  const {data, error} = await query
-    .eq('status','pending')
-    .eq('transaction_type','deposit')
-    .order('transaction_date',{ascending:false})
-    .limit(100);
+  const allowedMemberIds = [
+    ...new Set((groupMembers || []).map(m => m.user_id))
+  ];
+
+  if (allowedMemberIds.length === 0) {
+    message.textContent = 'No active members found in your officer groups.';
+    return;
+  }
+
+  transactionQuery = transactionQuery.in('member_id', allowedMemberIds);
+}
+
+const { data, error } = await transactionQuery;
+
+  
 
   if (error) {
     message.textContent = 'Could not load deposits: ' + error.message;
