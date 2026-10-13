@@ -61,6 +61,13 @@
     <div id="groups"></div>
   </section>
 
+<section class="card">
+  <h2>Group Members</h2>
+  <p id="membersMessage" class="muted">
+    Select a group to view its members.
+  </p>
+  <div id="membersList"></div>
+</section> 
   <section class="card">
     <h2>Important</h2>
     <p class="muted">
@@ -142,7 +149,11 @@
         '<p class="muted">' + safe(group?.description || 'No description provided') + '</p>' +
         '<p>Member number: <strong>' + safe(item.member_number || 'Pending') + '</strong></p>' +
         '<p>Status: <span class="status">' + safe(item.status) + '</span></p>';
-      groupsBox.appendChild(card);
+      const viewButton = document.createElement('button');
+viewButton.textContent = 'View Members';
+viewButton.addEventListener('click', () => loadMembers(item.group_id));
+card.appendChild(viewButton);
+groupsBox.appendChild(card);
     });
   }
 
@@ -157,6 +168,69 @@
     window.location.href = 'smart_chama_supabase_ready-2.html';
   });
 
+ async function loadMembers(groupId) {
+  const output = document.getElementById('membersList');
+  const status = document.getElementById('membersMessage');
+
+  output.innerHTML = '';
+  status.textContent = 'Loading members...';
+
+  const { data: sessionData } = await db.auth.getSession();
+
+  if (!sessionData.session) {
+    status.textContent = 'Please sign in first.';
+    return;
+  }
+
+  const { data: membership, error: membershipError } = await db
+    .from('chama_members')
+    .select('group_id')
+    .eq('user_id', sessionData.session.user.id)
+    .eq('status', 'active');
+
+  if (membershipError) {
+    status.textContent = 'Could not load memberships: ' + membershipError.message;
+    return;
+  }
+
+  if (!membership || !membership.some(m => m.group_id === groupId)) {
+    status.textContent = 'You do not have access to this group.';
+    return;
+  }
+
+  const { data, error } = await db
+    .from('chama_members')
+    .select('member_number, status, user_id, chama_member_roles(role)')
+    .eq('group_id', groupId)
+    .order('member_number');
+
+  if (error) {
+    status.textContent = 'Could not load members: ' + error.message;
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    status.textContent = 'No members found in this group.';
+    return;
+  }
+
+  status.textContent = data.length + ' member(s) in this group.';
+
+  data.forEach(member => {
+    const roleData = member.chama_member_roles;
+    const roles = Array.isArray(roleData) ? roleData : (roleData ? [roleData] : []);
+    const roleNames = roles.map(r => r.role).filter(Boolean).join(', ') || 'Member';
+
+    const card = document.createElement('div');
+    card.className = 'group';
+    card.innerHTML =
+      '<p><strong>' + safe(member.member_number || 'Pending') + '</strong></p>' +
+      '<p>Status: ' + safe(member.status) + '</p>' +
+      '<p>Role: ' + safe(roleNames) + '</p>';
+
+    output.appendChild(card);
+  });
+ }
   loadGroups();
 </script>
 </body>
