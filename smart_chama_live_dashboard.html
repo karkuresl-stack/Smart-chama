@@ -200,7 +200,7 @@ groupsBox.appendChild(card);
 
   const { data, error } = await db
     .from('chama_members')
-    .select('member_number, status, user_id, chama_member_roles(role)')
+    .select('member_number, status, user_id')
     .eq('group_id', groupId)
     .order('member_number');
 
@@ -216,11 +216,16 @@ groupsBox.appendChild(card);
 
   status.textContent = data.length + ' member(s) in this group.';
 
-  data.forEach(member => {
-    const roleData = member.chama_member_roles;
-    const roles = Array.isArray(roleData) ? roleData : (roleData ? [roleData] : []);
-    const roleNames = roles.map(r => r.role).filter(Boolean).join(', ') || 'Member';
+  for (const member of data) {
+    const { data: roleData, error: roleError } = await db
+  .from('chama_member_roles')
+  .select('role')
+  .eq('group_id', groupId)
+  .eq('user_id', member.user_id);
 
+const roleNames = roleError
+  ? 'Role unavailable'
+  : (roleData || []).map(r => r.role).filter(Boolean).join(', ') || 'Member';
     const card = document.createElement('div');
     card.className = 'group';
     card.innerHTML =
@@ -229,7 +234,7 @@ groupsBox.appendChild(card);
       '<p>Role: ' + safe(roleNames) + '</p>';
 
     output.appendChild(card);
-  });
+         }
  }
   loadGroups();
 </script>
