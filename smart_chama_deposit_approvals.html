@@ -131,9 +131,9 @@ async function loadDeposits() {
     approve.onclick = async () => {
       if (!confirm('Approve this deposit of KES ' + item.amount + '?')) return;
       approve.disabled = true;
-      const {error} = await db.rpc('approve_savings_deposit', {
-        p_transaction_id: item.id
-      });
+      const {error} = await db.rpc('officer_approve_savings_deposit', {
+  p_transaction_id: item.id
+});
       if (error) {
         message.textContent = 'Approval failed: ' + error.message;
         approve.disabled = false;
@@ -150,9 +150,9 @@ async function loadDeposits() {
     reject.onclick = async () => {
       if (!confirm('Reject this pending deposit?')) return;
       reject.disabled = true;
-      const {error} = await db.rpc('reject_savings_deposit', {
-        p_transaction_id: item.id
-      });
+      const {error} = await db.rpc('officer_reject_savings_deposit', {
+  p_transaction_id: item.id
+});
       if (error) {
         message.textContent = 'Rejection failed: ' + error.message;
         reject.disabled = false;
@@ -162,6 +162,32 @@ async function loadDeposits() {
       await loadDeposits();
     };
     card.appendChild(reject);
+    
+const deleteButton = document.createElement('button');
+deleteButton.className = 'reject';
+deleteButton.textContent = 'Delete Pending Deposit';
+
+deleteButton.onclick = async () => {
+  if (!confirm('Permanently delete this pending deposit?')) return;
+
+  deleteButton.disabled = true;
+
+  const {error} = await db.rpc('officer_delete_pending_deposit', {
+    p_transaction_id: item.id
+  });
+
+  if (error) {
+    message.textContent = 'Delete failed: ' + error.message;
+    deleteButton.disabled = false;
+    return;
+  }
+
+  message.textContent = 'Pending deposit deleted.';
+  await loadDeposits();
+};
+
+card.appendChild(deleteButton);
+
     deposits.appendChild(card);
   }
 }
