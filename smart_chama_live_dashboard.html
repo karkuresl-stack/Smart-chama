@@ -233,7 +233,40 @@ const roleNames = roleError
       '<p>Status: ' + safe(member.status) + '</p>' +
       '<p>Role: ' + safe(roleNames) + '</p>';
 
-    output.appendChild(card);
+    const removeButton = document.createElement('button');
+removeButton.textContent = 'Remove Member';
+removeButton.style.background = '#b42318';
+removeButton.style.marginTop = '10px';
+
+removeButton.addEventListener('click', async () => {
+  const confirmed = confirm(
+    'Remove member ' + (member.member_number || '') +
+    ' from this group? Their financial history will be preserved.'
+  );
+
+  if (!confirmed) return;
+
+  removeButton.disabled = true;
+  removeButton.textContent = 'Removing...';
+
+  const { error } = await db.rpc('remove_chama_member', {
+    p_membership_id: member.id
+  });
+
+  if (error) {
+    status.textContent = 'Removal failed: ' + error.message;
+    removeButton.disabled = false;
+    removeButton.textContent = 'Remove Member';
+    return;
+  }
+
+  status.textContent = 'Member removed successfully.';
+  await loadMembers(groupId);
+  await loadGroups();
+});
+
+card.appendChild(removeButton);
+output.appendChild(card);
          }
  }
   loadGroups();
