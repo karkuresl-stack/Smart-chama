@@ -197,12 +197,13 @@ groupsBox.appendChild(card);
     status.textContent = 'You do not have access to this group.';
     return;
   }
-
-  const { data, error } = await db
-    .from('chama_members')
-    .select('member_number, status, user_id')
-    .eq('group_id', groupId)
-    .order('member_number');
+const { data: allMembers, error } = await db
+  .from('chama_members')
+  .select('id, member_number, status, user_id')
+  .eq('group_id', groupId)
+  .neq('status', 'left')
+  .order('member_number');
+const data = allMembers;
 
   if (error) {
     status.textContent = 'Could not load members: ' + error.message;
