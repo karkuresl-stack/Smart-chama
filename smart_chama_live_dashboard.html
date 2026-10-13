@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Smart Chama | Live Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: Arial, sans-serif;
+      background: #f3f6fa; color: #172b4d;
+    }
+    header {
+      background: #123c32; color: white;
+      padding: 20px; display: flex;
+      justify-content: space-between; align-items: center;
+      gap: 12px; flex-wrap: wrap;
+    }
+    main { max-width: 850px; margin: 24px auto; padding: 0 16px; }
+    .card {
+      background: white; border-radius: 14px;
+      padding: 20px; margin-bottom: 16px;
+      box-shadow: 0 2px 10px #0000000b;
+    }
+    h1 { font-size: 22px; margin: 0; }
+    h2 { font-size: 19px; margin-top: 0; }
+    button {
+      border: 0; border-radius: 8px; padding: 12px 16px;
+      background: #176b52; color: white; font-weight: bold;
+      cursor: pointer;
+    }
+    button.secondary { background: #e6edf1; color: #172b4d; }
+    .muted { color: #667085; line-height: 1.5; }
+    .group {
+      border: 1px solid #dce5e9; border-radius: 10px;
+      padding: 15px; margin-top: 12px;
+    }
+    .status { font-weight: bold; text-transform: capitalize; }
+    #message { overflow-wrap: anywhere; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Smart Chama</h1>
+  <button id="logoutBtn" class="secondary">Sign out</button>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Live member dashboard</h2>
+    <p class="muted">Connected to your Smart Chama account and group records.</p>
+    <p id="signedIn">Checking your sign-in session...</p>
+    <button id="refreshBtn">Refresh groups</button>
+  </section>
+
+  <section class="card">
+    <h2>My Chama Groups</h2>
+    <p id="message" class="muted">Loading your group memberships...</p>
+    <div id="groups"></div>
+  </section>
+
+  <section class="card">
+    <h2>Important</h2>
+    <p class="muted">
+      This page reads group membership information only.
+      It does not create members, record deposits, or change balances.
+    </p>
+  </section>
+</main>
+
+<script>
+  const SUPABASE_URL = 'https://kbrhjgnwbkszmjldbfor.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable__Tck9HRnjrqdLdbpH36YPQ_-7vpek8B';
+
+  const db = window.supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_KEY
+  );
+
+  const message = document.getElementById('message');
+  const groupsBox = document.getElementById('groups');
+
+  function safe(value) {
+    return String(value ?? '').replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;',
+      '"': '&quot;', "'": '&#39;'
+    })[c]);
+  }
+
+  async function loadGroups() {
+    message.textContent = 'Loading your group memberships...';
+    groupsBox.innerHTML = '';
+
+    const { data: sessionData, error: sessionError } =
+      await db.auth.getSession();
+
+    if (sessionError || !sessionData.session) {
+      document.getElementById('signedIn').textContent =
+        'You are not signed in.';
+      message.textContent =
+        'Please sign in through Member Access first.';
+      return;
+    }
+
+    const user = sessionData.session.user;
+    document.getElementById('signedIn').textContent =
+      'Signed in as ' + user.email;
+
+    const { data, error } = await db
+      .from('chama_members')
+      .select('id, member_number, status, group_id, chama_groups(name, description)')
+      .eq('user_id', user.id)
+      .order('joined_at', { ascending: false });
+
+    if (error) {
+      message.textContent =
+        'Could not load groups: ' + error.message +
+        '. Check your membership SELECT policies and group relationship.';
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      message.textContent =
+        'No group memberships are visible to this account yet.';
+      return;
+    }
+
+    message.textContent = data.length +
+      ' membership record(s) found in Supabase.';
+
+    data.forEach(item => {
+      const group = Array.isArray(item.chama_groups)
+        ? item.chama_groups[0]
+        : item.chama_groups;
+
+      const card = document.createElement('div');
+      card.className = 'group';
+      card.innerHTML =
+        '<h2>' + safe(group?.name || 'Group name unavailable') + '</h2>' +
+        '<p class="muted">' + safe(group?.description || 'No description provided') + '</p>' +
+        '<p>Member number: <strong>' + safe(item.member_number || 'Pending') + '</strong></p>' +
+        '<p>Status: <span class="status">' + safe(item.status) + '</span></p>';
+      groupsBox.appendChild(card);
+    });
+  }
+
+  document.getElementById('refreshBtn').addEventListener('click', loadGroups);
+
+  document.getElementById('logoutBtn').addEventListener('click', async () => {
+    const { error } = await db.auth.signOut();
+    if (error) {
+      message.textContent = 'Sign-out failed: ' + error.message;
+      return;
+    }
+    window.location.href = 'smart_chama_supabase_ready-2.html';
+  });
+
+  loadGroups();
+</script>
+</body>
+</html>
