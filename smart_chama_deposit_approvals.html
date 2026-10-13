@@ -1,0 +1,184 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Chama | Deposit Approvals</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+body{font-family:Arial,sans-serif;background:#f0f6f2;color:#183b2b;margin:0;padding:18px}
+main{max-width:850px;margin:auto}
+.card{background:white;border-radius:16px;padding:20px;margin:16px 0;box-shadow:0 3px 15px #0000000b}
+h1{color:#176b45}button{border:0;border-radius:9px;padding:12px 16px;margin:5px 5px 5px 0;color:white;background:#176b45;font-weight:bold}
+.reject{background:#b42318}.muted{color:#66756c}.error{color:#b42318;overflow-wrap:anywhere}
+input{padding:12px;width:90%;max-width:350px;margin:6px 0;border:1px solid #ccd6cf;border-radius:8px}
+</style>
+</head>
+<body>
+<main>
+  <section class="card">
+    <h1>Smart Chama</h1>
+    <h2>Deposit Approvals</h2>
+    <p class="muted">Authorised officers can review pending deposits here.</p>
+    <p id="message">Checking your sign-in...</p>
+    <button id="refresh" hidden>Refresh Deposits</button>
+    <button id="logout" hidden>Sign Out</button>
+  </section>
+  <section id="deposits"></section>
+</main>
+
+<script>
+const SUPABASE_URL = 'https://kbrhjgnwbkszmjldbfor.supabase.co';
+const SUPABASE_KEY = 'sb_publishable__Tck9HRnjrqdLdbpH36YPQ_-7vpek8B';
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const message = document.getElementById('message');
+const deposits = document.getElementById('deposits');
+
+function safe(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  })[c]);
+}
+
+async function loadDeposits() {
+  deposits.innerHTML = '';
+  message.textContent = 'Loading pending deposits...';
+
+  const {data: sessionData} = await db.auth.getSession();
+  if (!sessionData.session) {
+    message.textContent = 'Please sign in through Member Access first.';
+    return;
+  }
+
+  const {data: memberships, error: memberError} = await db
+    .from('chama_members')
+    .select('group_id')
+    .eq('user_id', sessionData.session.user.id)
+    .eq('status', 'active');
+
+  if (memberError) {
+    message.textContent = 'Could not check your group access: ' + memberError.message;
+    return;
+  }
+
+  const groupIds = [...new Set((memberships || []).map(m => m.group_id))];
+  if (!groupIds.length) {
+    message.textContent = 'No active group memberships found.';
+    return;
+  }
+
+  const {data: roles, error: roleError} = await db
+    .from('chama_member_roles')
+    .select('group_id, role')
+    .eq('user_id', sessionData.session.user.id);
+
+  if (roleError) {
+    message.textContent = 'Could not check officer roles: ' + roleError.message;
+    return;
+  }
+
+  const isAdmin = await db
+    .from('smart_chama_system_admins')
+    .select('user_id')
+    .eq('user_id', sessionData.session.user.id)
+    .maybeSingle();
+
+  const officerGroups = groupIds.filter(id =>
+    (roles || []).some(r => r.group_id === id &&
+      ['chairperson','secretary','treasurer'].includes(r.role))
+  );
+
+  if (!isAdmin.data && officerGroups.length === 0) {
+    message.textContent = 'Access denied: only authorised officers can manage deposits.';
+    return;
+  }
+
+  let query = db.from('savings_transactions')
+    .select('id, member_id, amount, transaction_type, reference, status, transaction_date');
+
+  if (!isAdmin.data) {
+    query = query.in('group_id', officerGroups);
+  }
+
+  const {data, error} = await query
+    .eq('status','pending')
+    .eq('transaction_type','deposit')
+    .order('transaction_date',{ascending:false})
+    .limit(100);
+
+  if (error) {
+    message.textContent = 'Could not load deposits: ' + error.message;
+    return;
+  }
+
+  message.textContent = (data || []).length
+    ? 'Pending deposits found: ' + data.length
+    : 'No pending deposits found.';
+
+  for (const item of (data || [])) {
+    const card = document.createElement('article');
+    card.className = 'card';
+    card.innerHTML =
+      '<h3>Deposit: KES ' + safe(Number(item.amount).toFixed(2)) + '</h3>' +
+      '<p>Member ID: ' + safe(item.member_id) + '</p>' +
+      '<p>Reference: ' + safe(item.reference || 'Not provided') + '</p>' +
+      '<p>Date: ' + safe(item.transaction_date || 'Not recorded') + '</p>' +
+      '<p>Status: ' + safe(item.status) + '</p>';
+
+    const approve = document.createElement('button');
+    approve.textContent = 'Approve Deposit';
+    approve.onclick = async () => {
+      if (!confirm('Approve this deposit of KES ' + item.amount + '?')) return;
+      approve.disabled = true;
+      const {error} = await db.rpc('approve_savings_deposit', {
+        p_transaction_id: item.id
+      });
+      if (error) {
+        message.textContent = 'Approval failed: ' + error.message;
+        approve.disabled = false;
+        return;
+      }
+      message.textContent = 'Deposit approved.';
+      await loadDeposits();
+    };
+    card.appendChild(approve);
+
+    const reject = document.createElement('button');
+    reject.className = 'reject';
+    reject.textContent = 'Reject Deposit';
+    reject.onclick = async () => {
+      if (!confirm('Reject this pending deposit?')) return;
+      reject.disabled = true;
+      const {error} = await db.rpc('reject_savings_deposit', {
+        p_transaction_id: item.id
+      });
+      if (error) {
+        message.textContent = 'Rejection failed: ' + error.message;
+        reject.disabled = false;
+        return;
+      }
+      message.textContent = 'Deposit rejected.';
+      await loadDeposits();
+    };
+    card.appendChild(reject);
+    deposits.appendChild(card);
+  }
+}
+
+document.getElementById('refresh').onclick = loadDeposits;
+document.getElementById('logout').onclick = async () => {
+  await db.auth.signOut();
+  location.reload();
+};
+
+db.auth.onAuthStateChange((_event, session) => {
+  document.getElementById('refresh').hidden = !session;
+  document.getElementById('logout').hidden = !session;
+});
+loadDeposits().catch(e => {
+  message.textContent = 'Unexpected error: ' + e.message;
+});
+</script>
+</body>
+</html>
