@@ -99,10 +99,15 @@
   async function loadGroups() {
     message.textContent = 'Loading your group memberships...';
     groupsBox.innerHTML = '';
-
-    const { data: sessionData, error: sessionError } =
-      await db.auth.getSession();
-
+const sessionResult = await Promise.race([
+  db.auth.getSession(),
+  new Promise(resolve => setTimeout(() => resolve({
+    data: { session: null },
+    error: new Error('Session check timed out after 10 seconds. Please reload and sign in again.')
+  }), 10000))
+]);
+const { data: sessionData, error: sessionError } = sessionResult;
+    
     if (sessionError || !sessionData.session) {
       document.getElementById('signedIn').textContent =
         'You are not signed in.';
