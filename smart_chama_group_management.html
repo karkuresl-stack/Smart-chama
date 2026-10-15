@@ -1,0 +1,333 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Chama | Group Management</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--green:#17654c;--dark:#103d30;--pale:#eaf4ee;--bg:#f1f5f9;--text:#243247;--red:#a52d2d}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px Arial,sans-serif}
+header{background:var(--dark);color:white;padding:22px 18px}
+header h1{margin:0 0 8px;font-size:25px}
+header p{margin:0;color:#d9eee4}
+main{max-width:950px;margin:22px auto;padding:0 14px}
+.card{background:white;border-radius:18px;padding:20px;margin-bottom:18px;box-shadow:0 3px 16px #152b3910}
+h2{font-size:21px;margin:0 0 16px}
+label{display:block;font-weight:bold;margin:14px 0 7px}
+input,select{width:100%;padding:13px;border:1px solid #cbd5d1;border-radius:10px;font-size:16px;background:white}
+button,.button{border:0;border-radius:10px;background:var(--green);color:white;padding:12px 15px;font-weight:bold;font-size:15px;cursor:pointer;text-decoration:none;display:inline-block;margin:7px 5px 0 0}
+button.secondary,.button.secondary{background:#e8f1ec;color:var(--dark)}
+button.danger{background:var(--red)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.notice{padding:13px;border-radius:10px;background:var(--pale);margin-top:14px;overflow-wrap:anywhere}
+.error{background:#ffeded;color:#8c1d1d}
+.muted{color:#697586;line-height:1.5}
+.member{border:1px solid #e0e7e3;border-radius:13px;padding:15px;margin:12px 0}
+.member h3{margin:0 0 8px;overflow-wrap:anywhere}
+.member p{margin:7px 0;overflow-wrap:anywhere}
+.actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px}
+.small{font-size:13px}
+#members{margin-top:12px}
+@media(min-width:700px){.two{display:grid;grid-template-columns:1fr 1fr;gap:18px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Smart Chama</h1>
+  <p>System Owner · Group Management</p>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Owner access</h2>
+    <p id="authStatus" class="notice">Checking your sign-in session...</p>
+    <button id="refreshBtn" onclick="loadGroups()" disabled>Refresh groups</button>
+    <a class="button secondary" href="smart_chama_main.html">Main System</a>
+    <button class="secondary" onclick="signOut()">Sign out</button>
+  </section>
+
+  <section class="card">
+    <h2>Select a chama</h2>
+    <label for="groupSelect">Group</label>
+    <select id="groupSelect" disabled>
+      <option value="">Loading groups...</option>
+    </select>
+    <p id="groupInfo" class="muted">Select a group to manage its memberships.</p>
+    <button onclick="loadMembers()" id="loadMembersBtn" disabled>Load members</button>
+  </section>
+
+  <section class="card">
+    <h2>Group members</h2>
+    <p class="muted">Approve pending members, manage active memberships, and assign officer roles. Changes are checked by the database.</p>
+    <div id="members"><p class="muted">Select a group and tap Load members.</p></div>
+  </section>
+
+  <section class="card">
+    <h2>Important</h2>
+    <p class="muted">Removing a membership marks it as left and removes its officer assignment. It does not delete financial transactions. This page is for the system owner; group-specific officer permissions should be enforced separately for day-to-day officer actions.</p>
+  </section>
+</main>
+
+<script>
+const SUPABASE_URL = "https://kbrhjgnwbkszmjldbfor.supabase.co";
+const SUPABASE_KEY = "sb_publishable__Tck9HRnjrqdLdbpH36YPQ_-7vpek8B";
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let currentUser = null;
+let groups = [];
+let memberRows = [];
+let roleRows = [];
+
+function message(text, isError=false) {
+  const el = document.getElementById("authStatus");
+  el.textContent = text;
+  el.className = "notice" + (isError ? " error" : "");
+}
+
+function escapeText(value) {
+  return String(value ?? "");
+}
+
+async function start() {
+  try {
+    const { data, error } = await db.auth.getSession();
+    if (error) throw error;
+    currentUser = data.session?.user || null;
+    if (!currentUser) {
+      message("You are signed out. Open Member Access and sign in first.", true);
+      return;
+    }
+
+    const { data: owner, error: ownerError } = await db
+      .from("smart_chama_system_admins")
+      .select("user_id")
+      .eq("user_id", currentUser.id)
+      .maybeSingle();
+
+    if (ownerError) throw ownerError;
+    if (!owner) {
+      message("Access denied: this account is not registered as the system owner.", true);
+      return;
+    }
+
+    message("Owner verified: " + currentUser.email);
+    document.getElementById("refreshBtn").disabled = false;
+    document.getElementById("groupSelect").disabled = false;
+    document.getElementById("loadMembersBtn").disabled = false;
+    await loadGroups();
+  } catch (e) {
+    message("Could not initialize management page: " + e.message, true);
+  }
+}
+
+async function loadGroups() {
+  const select = document.getElementById("groupSelect");
+  select.innerHTML = '<option value="">Loading groups...</option>';
+  document.getElementById("members").textContent = "Loading groups...";
+  try {
+    const { data, error } = await db
+      .from("chama_groups")
+      .select("id,name,description,created_at")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    groups = data || [];
+    select.innerHTML = "";
+
+    if (!groups.length) {
+      select.innerHTML = '<option value="">No groups found</option>';
+      document.getElementById("groupInfo").textContent = "Create a chama in Administration first.";
+      document.getElementById("members").textContent = "No groups found.";
+      return;
+    }
+
+    for (const group of groups) {
+      const option = document.createElement("option");
+      option.value = group.id;
+      option.textContent = group.name;
+      select.appendChild(option);
+    }
+
+    select.onchange = updateGroupInfo;
+    updateGroupInfo();
+    await loadMembers();
+  } catch (e) {
+    select.innerHTML = '<option value="">Could not load groups</option>';
+    document.getElementById("members").textContent = "Group loading failed: " + e.message;
+    message("Group loading failed: " + e.message, true);
+  }
+}
+
+function selectedGroup() {
+  return groups.find(g => g.id === document.getElementById("groupSelect").value);
+}
+
+function updateGroupInfo() {
+  const g = selectedGroup();
+  document.getElementById("groupInfo").textContent = g
+    ? (g.description || "No description") + " · Group ID: " + g.id
+    : "Select a group.";
+  document.getElementById("members").innerHTML = '<p class="muted">Tap Load members to view memberships.</p>';
+}
+
+async function loadMembers() {
+  const group = selectedGroup();
+  if (!group) {
+    document.getElementById("members").textContent = "Select a group first.";
+    return;
+  }
+
+  const target = document.getElementById("members");
+  target.textContent = "Loading members...";
+  try {
+    const [membersResult, rolesResult] = await Promise.all([
+      db.from("chama_members")
+        .select("id,group_id,user_id,member_number,status,joined_at")
+        .eq("group_id", group.id)
+        .neq("status", "left")
+        .order("joined_at", { ascending: true }),
+      db.from("chama_member_roles")
+        .select("group_id,user_id,role")
+        .eq("group_id", group.id)
+    ]);
+
+    if (membersResult.error) throw membersResult.error;
+    if (rolesResult.error) throw rolesResult.error;
+
+    memberRows = membersResult.data || [];
+    roleRows = rolesResult.data || [];
+    renderMembers(group);
+    message("Loaded " + memberRows.length + " membership(s) for " + group.name + ".");
+  } catch (e) {
+    target.textContent = "Could not load members: " + e.message;
+    message("Member loading failed: " + e.message, true);
+  }
+}
+
+function renderMembers(group) {
+  const target = document.getElementById("members");
+  target.innerHTML = "";
+
+  if (!memberRows.length) {
+    target.textContent = "No pending or active memberships in this group yet.";
+    return;
+  }
+
+  for (const m of memberRows) {
+    const card = document.createElement("article");
+    card.className = "member";
+
+    const heading = document.createElement("h3");
+    heading.textContent = m.member_number || "Membership";
+    card.appendChild(heading);
+
+    const role = roleRows.find(r => r.user_id === m.user_id);
+    const details = document.createElement("p");
+    details.textContent =
+      "Status: " + m.status +
+      " · Role: " + (role?.role || "Member") +
+      " · Joined: " + (m.joined_at ? new Date(m.joined_at).toLocaleDateString() : "Unknown");
+    card.appendChild(details);
+
+    const user = document.createElement("p");
+    user.className = "muted small";
+    user.textContent = "User ID: " + m.user_id;
+    card.appendChild(user);
+
+    if (m.status === "pending") {
+      const approve = makeButton("Approve member", () => updateStatus(m, "active"));
+      card.appendChild(approve);
+    }
+
+    if (m.status === "active") {
+      const suspend = makeButton("Suspend", () => updateStatus(m, "suspended"), "secondary");
+      card.appendChild(suspend);
+    }
+
+    if (m.status === "suspended") {
+      const reactivate = makeButton("Reactivate", () => updateStatus(m, "active"));
+      card.appendChild(reactivate);
+    }
+
+    if (m.status === "active") {
+      const label = document.createElement("label");
+      label.textContent = "Assign officer role";
+      card.appendChild(label);
+
+      const select = document.createElement("select");
+      for (const value of ["chairperson", "secretary", "treasurer", "coordinator"]) {
+        const opt = document.createElement("option");
+        opt.value = value;
+        opt.textContent = value.charAt(0).toUpperCase() + value.slice(1);
+        select.appendChild(opt);
+      }
+      card.appendChild(select);
+
+      const assign = makeButton("Assign role", async () => {
+        assign.disabled = true;
+        try {
+          const { data, error } = await db.rpc("owner_assign_group_role", {
+            p_group_id: group.id,
+            p_user_id: m.user_id,
+            p_role: select.value
+          });
+          if (error) throw error;
+          message(data || "Officer role assigned successfully.");
+          await loadMembers();
+        } catch (e) {
+          message("Role assignment failed: " + e.message, true);
+        } finally {
+          assign.disabled = false;
+        }
+      });
+      card.appendChild(assign);
+    }
+
+    const remove = makeButton("Remove membership", async () => {
+      if (!confirm("Remove " + (m.member_number || "this member") + " from " + group.name + "? Their financial history will be preserved.")) return;
+      await updateStatus(m, "left");
+    }, "danger");
+    card.appendChild(remove);
+
+    target.appendChild(card);
+  }
+}
+
+function makeButton(text, action, style="") {
+  const button = document.createElement("button");
+  button.textContent = text;
+  if (style) button.className = style;
+  button.onclick = action;
+  return button;
+}
+
+async function updateStatus(member, status) {
+  try {
+    const { data, error } = await db.rpc("owner_update_member_status", {
+      p_membership_id: member.id,
+      p_status: status
+    });
+    if (error) throw error;
+    message(data || "Membership updated.");
+    await loadMembers();
+  } catch (e) {
+    message("Membership update failed: " + e.message, true);
+  }
+}
+
+async function signOut() {
+  const { error } = await db.auth.signOut();
+  if (error) {
+    message("Sign-out failed: " + error.message, true);
+    return;
+  }
+  window.location.href = "smart_chama_supabase_ready-2.html";
+}
+
+start();
+</script>
+</body>
+</html>
