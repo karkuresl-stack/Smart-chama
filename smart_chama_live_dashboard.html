@@ -114,12 +114,36 @@
     const user = sessionData.session.user;
     document.getElementById('signedIn').textContent =
       'Signed in as ' + user.email;
+const { data: ownerRecord, error: ownerError } = await db
+  .from('smart_chama_system_admins')
+  .select('user_id')
+  .eq('user_id', user.id)
+  .maybeSingle();
 
-    const { data, error } = await db
-      .from('chama_members')
-      .select('id, member_number, status, group_id, chama_groups(name, description)')
-      .eq('user_id', user.id)
-      .order('joined_at', { ascending: false });
+const isSystemOwner = !ownerError && !!ownerRecord;
+    let data;
+let error;
+
+if (isSystemOwner) {
+  const result = await db
+    .from('chama_groups')
+    .select('id, name, description, created_at')
+    .order('created_at', { ascending: false });
+
+  data = result.data;
+  error = result.error;
+} else {
+  const result = await db
+    .from('chama_members')
+    .select('id, member_number, status, group_id, chama_groups(name, description)')
+    .eq('user_id', user.id)
+    .order('joined_at', { ascending: false });
+
+  data = result.data;
+  error = result.error;
+}
+
+    
 
     if (error) {
       message.textContent =
@@ -138,23 +162,33 @@
       ' membership record(s) found in Supabase.';
 
     data.forEach(item => {
-      const group = Array.isArray(item.chama_groups)
-        ? item.chama_groups[0]
-        : item.chama_groups;
+      const group = isSystemOwner
+  ? item
+  : (Array.isArray(item.chama_groups)
+      ? item.chama_groups[0]
+      : item.chama_groups);
 
       const card = document.createElement('div');
       card.className = 'group';
-      card.innerHTML =
-        '<h2>' + safe(group?.name || 'Group name unavailable') + '</h2>' +
-        '<p class="muted">' + safe(group?.description || 'No description provided') + '</p>' +
-        '<p>Member number: <strong>' + safe(item.member_number || 'Pending') + '</strong></p>' +
-        '<p>Status: <span class="status">' + safe(item.status) + '</span></p>';
+     card.innerHTML =
+  '<h2>' + safe(group?.name || 'Group name unavailable') + '</h2>' +
+  '<p class="muted">' + safe(group?.description || '') + '</p>' +
+  (isSystemOwner ? '' :
+    '<p>Member number: <strong>' + safe(item.member_number || '') + '</strong></p>' +
+    '<p>Status: <span class="status">' + safe(item.status || '') + '</span></p>'); 
       const viewButton = document.createElement('button');
-viewButton.textContent = 'View Members';
-viewButton.addEventListener('click', () => loadMembers(item.group_id));
+viewButton.textContent = isSystemOwner ? 'Manage Group' : 'View Members';
+
+viewButton.addEventListener('click', () => {
+  if (isSystemOwner) {
+    window.location.href = 'smart_chama_admin.html';
+  } else {
+    loadMembers(item.group_id);
+  }
+});
+
 card.appendChild(viewButton);
 groupsBox.appendChild(card);
-    });
   }
 
   document.getElementById('refreshBtn').addEventListener('click', loadGroups);
