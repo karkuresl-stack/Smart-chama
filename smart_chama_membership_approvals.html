@@ -19,6 +19,7 @@ button,a{display:inline-block;padding:12px 15px;border:0;border-radius:10px;back
 .request{border:1px solid #e0e7e3;border-radius:13px;padding:15px;margin:12px 0;overflow-wrap:anywhere}
 .muted{color:#667085;line-height:1.5}
 button:disabled{opacity:.55}
+[hidden]{display:none!important}
 </style>
 </head>
 <body>
@@ -29,36 +30,35 @@ button:disabled{opacity:.55}
 <main>
 <section class="card">
 <h2>Reviewer access</h2>
-<div id="status" class="notice">Starting secure connection...</div>
-<button id="refresh" disabled>Refresh requests</button>
-<a class="secondary" href="smart_chama_group_management.html">Group Management</a>
+<div id="status" class="notice">Initializing secure access...</div>
+<div id="reviewerControls" hidden>
+<button id="refresh">Refresh requests</button>
+</div>
 <a class="secondary" href="smart_chama_main.html">Main System</a>
 <a class="secondary" href="smart_chama_supabase_ready-2.html">Member Access / Sign in</a>
+<a id="managementLink" class="secondary" href="smart_chama_group_management.html" hidden>Group Management</a>
 </section>
-<section class="card">
+<section class="card" id="requestsCard" hidden>
 <h2>Pending membership requests</h2>
-<p class="muted">The system owner, chairperson, or secretary can review requests. Database functions enforce review permissions.</p>
-<div id="requests" class="notice">Connecting...</div>
+<p class="muted">Only authorized reviewers can view requests for their permitted groups.</p>
+<div id="requests" class="notice">Loading requests...</div>
 </section>
 </main>
 <script type="module">
 const $=id=>document.getElementById(id);
 const URL="https://kbrhjgnwbkszmjldbfor.supabase.co";
 const KEY="sb_publishable__Tck9HRnjrqdLdbpH36YPQ_-7vpek8B";
-let db=null,currentUser=null;
+let db=null,user=null,isOwner=false,reviewGroupIds=[];
 
-function status(message,error=false){
+function setStatus(message,isError=false){
  $("status").textContent=message;
- $("status").className="notice"+(error?" error":"");
+ $("status").className="notice"+(isError?" error":"");
 }
-function timed(promise,label,ms=12000){
- return Promise.race([
-  promise,
-  new Promise((_,reject)=>setTimeout(
-   ()=>reject(new Error(label+" timed out. Check your connection and refresh.")),ms))
- ]);
+function timed(p,label,ms=12000){
+ return Promise.race([p,new Promise((_,reject)=>
+  setTimeout(()=>reject(new Error(p+" timed out")),ms))]);
 }
-function make(tag,text,cls){
+function node(tag,text,cls){
  const n=document.createElement(tag);
  n.textContent=text;
  if(cls)n.className=cls;
@@ -66,75 +66,100 @@ function make(tag,text,cls){
 }
 async function init(){
  try{
-  status("Loading secure database library...");
-  const {createClient}=await timed(
-   import("https://esm.sh/@supabase/supabase-js@2"),
-   "Supabase library loading",20000
-  );
+  setStatus("Connecting securely...");
+  const {createClient}=await import("https://esm.sh/@supabase/supabase-js@2");
   db=createClient(URL,KEY);
-  status("Checking your sign-in...");
-  const {data,error}=await timed(db.auth.getSession(),"Sign-in check");
-  if(error)throw error;
-  currentUser=data.session?.user;
-  if(!currentUser){
-   status("You are not signed in. Use Member Access / Sign in, then return here.",true);
-   $("requests").textContent="Sign in required.";
+  const {data:sessionData,error:sessionError}=await timed(
+   db.auth.getSession(),"session"
+  );
+  if(sessionError)throw sessionError;
+  user=sessionData.session?.user;
+  if(!user){
+   setStatus("Please sign in first. Reviewer access is restricted.",true);
    return;
   }
-  status("Signed in as "+(currentUser.email||currentUser.id)+". Checking permissions...");
-  $("refresh").disabled=false;
+
+  const {data:admin,error:adminError}=await timed(
+   db.from("smart_chama_system_admins")
+    .select("user_id").eq("user_id",user.id).maybeSingle(),
+   "owner verification"
+  );
+  if(adminError)throw adminError;
+  isOwner=!!admin;
+
+  const {data:roles,error:roleError}=await timed(
+   db.from("chama_member_roles")
+    .select("group_id,role")
+    .eq("user_id",user.id)
+    .in("role",["chairperson","secretary"]),
+   "reviewer verification"
+  );
+  if(roleError)throw roleError;
+  reviewGroupIds=[...new Set((roles||[]).map(r=>r.group_id))];
+
+  if(!isOwner&&reviewGroupIds.length===0){
+   setStatus("Access denied: your account is not authorized to review membership requests.",true);
+   return;
+  }
+
+  $("reviewerControls").hidden=false;
+  $("requestsCard").hidden=false;
+  $("managementLink").hidden=!isOwner;
+  setStatus(isOwner
+   ?"Authorized system owner. Loading pending requests..."
+   :"Authorized reviewer. Loading requests for your group(s)..."
+  );
   await loadRequests();
  }catch(e){
-  status("Approval page error: "+(e?.message||String(e)),true);
-  $("requests").textContent="Details: "+(e?.message||String(e));
+  setStatus("Access check failed: "+(e?.message||String(e)),true);
  }
 }
 async function loadRequests(){
- if(!db||!currentUser){
-  status("Please sign in first.",true);return;
- }
  $("refresh").disabled=true;
  $("requests").textContent="Loading pending requests...";
  try{
-  const {data:members,error:memberError}=await timed(
-   db.from("chama_members")
-    .select("id,group_id,user_id,member_number,status,joined_at")
-    .eq("status","pending").order("joined_at",{ascending:true}),
-   "Pending request loading",15000
-  );
-  if(memberError)throw memberError;
+  let query=db.from("chama_members")
+   .select("id,group_id,user_id,member_number,status,joined_at")
+   .eq("status","pending")
+   .order("joined_at",{ascending:true});
+  if(!isOwner)query=query.in("group_id",reviewGroupIds);
+  const {data:members,error}=await timed(query,"pending request loading");
+  if(error)throw error;
+
   const {data:groups,error:groupError}=await timed(
    db.from("chama_groups").select("id,name"),
-   "Group names loading"
+   "group names"
   );
   if(groupError)throw groupError;
   const names=new Map((groups||[]).map(g=>[g.id,g.name]));
   const target=$("requests");
-  target.innerHTML="";
+  target.replaceChildren();
+
   if(!members?.length){
-   target.appendChild(make("p","No pending membership requests.","notice"));
-   status("No pending requests found.");
+   target.textContent="No pending membership requests for your authorized groups.";
+   setStatus("No pending requests found.");
    return;
   }
   for(const m of members){
-   const card=make("article","","request");
-   card.appendChild(make("h3",names.get(m.group_id)||"Chama group"));
-   card.appendChild(make("p","Membership: "+(m.member_number||"Pending number")));
-   card.appendChild(make("p","User ID: "+m.user_id));
-   card.appendChild(make("p","Requested: "+(m.joined_at?new Date(m.joined_at).toLocaleString():"Unknown")));
-   const approve=make("button","Approve");
+   const card=node("article","","request");
+   card.appendChild(node("h3",names.get(m.group_id)||"Chama group"));
+   card.appendChild(node("p","Membership: "+(m.member_number||"Pending number")));
+   card.appendChild(node("p","Requested: "+(m.joined_at?new Date(m.joined_at).toLocaleString():"Unknown")));
+
+   const approve=node("button","Approve");
    approve.addEventListener("click",()=>review(m.id,"approve",approve));
-   const reject=make("button","Reject","danger");
+   const reject=node("button","Reject","danger");
    reject.addEventListener("click",()=>review(m.id,"reject",reject));
-   card.appendChild(approve);
-   card.appendChild(reject);
+   card.append(approve,reject);
    target.appendChild(card);
   }
-  status(members.length+" pending request(s) loaded.");
+  setStatus(members.length+" pending request(s) loaded for your authorized scope.");
  }catch(e){
   $("requests").textContent="Could not load requests: "+(e?.message||String(e));
-  status("Approval loading failed: "+(e?.message||String(e)),true);
- }finally{$("refresh").disabled=false;}
+  setStatus("Request loading failed: "+(e?.message||String(e)),true);
+ }finally{
+  $("refresh").disabled=false;
+ }
 }
 async function review(id,decision,button){
  if(!confirm("Confirm "+decision+" for this membership request?"))return;
@@ -143,13 +168,13 @@ async function review(id,decision,button){
   const {data,error}=await timed(
    db.rpc("review_chama_membership",{
     p_membership_id:id,p_decision:decision
-   }),"Membership review",15000
+   }),"membership review"
   );
   if(error)throw error;
-  status(data||"Membership review completed.");
+  setStatus(data||"Review completed.");
   await loadRequests();
  }catch(e){
-  status("Review failed: "+(e?.message||String(e)),true);
+  setStatus("Review failed: "+(e?.message||String(e)),true);
   button.disabled=false;
  }
 }
