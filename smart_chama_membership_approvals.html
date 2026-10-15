@@ -4,43 +4,41 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Smart Chama - Member Registration</title>
+<title>Smart Chama - Membership Approvals</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#f1f5f9;color:#243247;font:16px Arial,sans-serif}
 header{background:#103d30;color:white;padding:24px}
-main{max-width:720px;margin:22px auto;padding:14px}
+main{max-width:850px;margin:22px auto;padding:14px}
 .card{background:white;border-radius:16px;padding:22px;margin-bottom:18px}
 .notice{padding:14px;background:#eaf4ee;border-radius:10px;overflow-wrap:anywhere}
 .error{background:#ffeded;color:#8c1d1d}
-label{display:block;font-weight:bold;margin:16px 0 8px}
-select,button,a{font-size:16px}
-select{width:100%;padding:14px;border:1px solid #ccd5d1;border-radius:10px}
-button,a{display:inline-block;padding:13px 16px;border:0;border-radius:10px;background:#17654c;color:white;text-decoration:none;font-weight:bold;margin:8px 6px 0 0}
+button,a{display:inline-block;padding:12px 15px;border:0;border-radius:10px;background:#17654c;color:white;text-decoration:none;font-weight:bold;margin:8px 6px 0 0}
 .secondary{background:#e8f1ec;color:#103d30}
-button:disabled,select:disabled{opacity:.55}
+.danger{background:#a52d2d;color:white}
+.request{border:1px solid #e0e7e3;border-radius:13px;padding:15px;margin:12px 0;overflow-wrap:anywhere}
 .muted{color:#667085;line-height:1.5}
+button:disabled{opacity:.55}
 </style>
 </head>
 <body>
 <header>
 <h1>Smart Chama</h1>
-<p>Member Registration</p>
+<p>Membership Approval Centre</p>
 </header>
 <main>
 <section class="card">
-<h2>Account</h2>
+<h2>Reviewer access</h2>
 <div id="status" class="notice">Starting secure connection...</div>
-<a class="secondary" href="smart_chama_supabase_ready-2.html">Member Access / Sign in</a>
+<button id="refresh" disabled>Refresh requests</button>
+<a class="secondary" href="smart_chama_group_management.html">Group Management</a>
 <a class="secondary" href="smart_chama_main.html">Main System</a>
+<a class="secondary" href="smart_chama_supabase_ready-2.html">Member Access / Sign in</a>
 </section>
 <section class="card">
-<h2>Request membership</h2>
-<p class="muted">Choose a chama and submit your request. Group access begins after approval.</p>
-<label for="group">Choose chama</label>
-<select id="group" disabled><option>Connecting...</option></select>
-<button id="submit" disabled>Submit membership request</button>
-<div id="result" class="notice" hidden></div>
+<h2>Pending membership requests</h2>
+<p class="muted">The system owner, chairperson, or secretary can review requests. Database functions enforce review permissions.</p>
+<div id="requests" class="notice">Connecting...</div>
 </section>
 </main>
 <script type="module">
@@ -49,14 +47,9 @@ const URL="https://kbrhjgnwbkszmjldbfor.supabase.co";
 const KEY="sb_publishable__Tck9HRnjrqdLdbpH36YPQ_-7vpek8B";
 let db=null,currentUser=null;
 
-function showStatus(message,error=false){
+function status(message,error=false){
  $("status").textContent=message;
  $("status").className="notice"+(error?" error":"");
-}
-function showResult(message,error=false){
- $("result").hidden=false;
- $("result").textContent=message;
- $("result").className="notice"+(error?" error":"");
 }
 function timed(promise,label,ms=12000){
  return Promise.race([
@@ -65,65 +58,102 @@ function timed(promise,label,ms=12000){
    ()=>reject(new Error(label+" timed out. Check your connection and refresh.")),ms))
  ]);
 }
+function make(tag,text,cls){
+ const n=document.createElement(tag);
+ n.textContent=text;
+ if(cls)n.className=cls;
+ return n;
+}
 async function init(){
  try{
-  showStatus("Loading secure database library...");
+  status("Loading secure database library...");
   const {createClient}=await timed(
    import("https://esm.sh/@supabase/supabase-js@2"),
    "Supabase library loading",20000
   );
   db=createClient(URL,KEY);
-  showStatus("Checking your sign-in...");
+  status("Checking your sign-in...");
   const {data,error}=await timed(db.auth.getSession(),"Sign-in check");
   if(error)throw error;
   currentUser=data.session?.user;
   if(!currentUser){
-   showStatus("Please sign in using Member Access, then return here.",true);
-   $("group").innerHTML="<option>Sign in first</option>";
+   status("You are not signed in. Use Member Access / Sign in, then return here.",true);
+   $("requests").textContent="Sign in required.";
    return;
   }
-  showStatus("Signed in as "+(currentUser.email||currentUser.id));
-  const {data:groups,error:groupError}=await timed(
-   db.from("chama_groups").select("id,name,description").order("name"),
-   "Group loading"
-  );
-  if(groupError)throw groupError;
-  const select=$("group");
-  select.innerHTML="";
-  if(!groups?.length){
-   select.add(new Option("No groups available",""));
-   showResult("No chama groups are currently available.",true);
-   return;
-  }
-  select.add(new Option("Select a chama",""));
-  groups.forEach(g=>select.add(new Option(
-   g.name+(g.description?" — "+g.description:""),g.id
-  )));
-  select.disabled=false;
-  $("submit").disabled=false;
+  status("Signed in as "+(currentUser.email||currentUser.id)+". Checking permissions...");
+  $("refresh").disabled=false;
+  await loadRequests();
  }catch(e){
-  showStatus("Registration error: "+(e?.message||String(e)),true);
-  $("group").innerHTML="<option>Could not load groups</option>";
+  status("Approval page error: "+(e?.message||String(e)),true);
+  $("requests").textContent="Details: "+(e?.message||String(e));
  }
 }
-$("submit").addEventListener("click",async()=>{
+async function loadRequests(){
  if(!db||!currentUser){
-  showResult("Please sign in first.",true);return;
+  status("Please sign in first.",true);return;
  }
- const groupId=$("group").value;
- if(!groupId){showResult("Choose a chama first.",true);return;}
- $("submit").disabled=true;
+ $("refresh").disabled=true;
+ $("requests").textContent="Loading pending requests...";
+ try{
+  const {data:members,error:memberError}=await timed(
+   db.from("chama_members")
+    .select("id,group_id,user_id,member_number,status,joined_at")
+    .eq("status","pending").order("joined_at",{ascending:true}),
+   "Pending request loading",15000
+  );
+  if(memberError)throw memberError;
+  const {data:groups,error:groupError}=await timed(
+   db.from("chama_groups").select("id,name"),
+   "Group names loading"
+  );
+  if(groupError)throw groupError;
+  const names=new Map((groups||[]).map(g=>[g.id,g.name]));
+  const target=$("requests");
+  target.innerHTML="";
+  if(!members?.length){
+   target.appendChild(make("p","No pending membership requests.","notice"));
+   status("No pending requests found.");
+   return;
+  }
+  for(const m of members){
+   const card=make("article","","request");
+   card.appendChild(make("h3",names.get(m.group_id)||"Chama group"));
+   card.appendChild(make("p","Membership: "+(m.member_number||"Pending number")));
+   card.appendChild(make("p","User ID: "+m.user_id));
+   card.appendChild(make("p","Requested: "+(m.joined_at?new Date(m.joined_at).toLocaleString():"Unknown")));
+   const approve=make("button","Approve");
+   approve.addEventListener("click",()=>review(m.id,"approve",approve));
+   const reject=make("button","Reject","danger");
+   reject.addEventListener("click",()=>review(m.id,"reject",reject));
+   card.appendChild(approve);
+   card.appendChild(reject);
+   target.appendChild(card);
+  }
+  status(members.length+" pending request(s) loaded.");
+ }catch(e){
+  $("requests").textContent="Could not load requests: "+(e?.message||String(e));
+  status("Approval loading failed: "+(e?.message||String(e)),true);
+ }finally{$("refresh").disabled=false;}
+}
+async function review(id,decision,button){
+ if(!confirm("Confirm "+decision+" for this membership request?"))return;
+ button.disabled=true;
  try{
   const {data,error}=await timed(
-   db.rpc("request_chama_membership",{p_group_id:groupId}),
-   "Membership request",15000
+   db.rpc("review_chama_membership",{
+    p_membership_id:id,p_decision:decision
+   }),"Membership review",15000
   );
   if(error)throw error;
-  showResult(data||"Request submitted. Await approval.");
+  status(data||"Membership review completed.");
+  await loadRequests();
  }catch(e){
-  showResult("Request failed: "+(e?.message||String(e)),true);
- }finally{$("submit").disabled=false;}
-});
+  status("Review failed: "+(e?.message||String(e)),true);
+  button.disabled=false;
+ }
+}
+$("refresh").addEventListener("click",loadRequests);
 init();
 </script>
 </body>
