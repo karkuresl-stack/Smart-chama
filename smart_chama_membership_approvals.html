@@ -1,132 +1,140 @@
 
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Smart Chama | Membership Approvals</title>
+<title>Smart Chama - Membership Approvals</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#f1f5f9;color:#243247;font:16px Arial,sans-serif}
-header{background:#103d30;color:white;padding:22px}main{max-width:850px;margin:22px auto;padding:0 14px}
+header{background:#103d30;color:white;padding:22px}main{max-width:850px;margin:22px auto;padding:14px}
 .card{background:white;border-radius:16px;padding:20px;margin-bottom:18px}
-h1{margin:0 0 8px;font-size:25px}h2{margin-top:0}p{line-height:1.5;overflow-wrap:anywhere}
-button,.link{display:inline-block;border:0;border-radius:10px;background:#17654c;color:white;padding:12px 15px;font-weight:bold;font-size:15px;text-decoration:none;margin:8px 5px 0 0;cursor:pointer}
-.secondary{background:#e8f1ec!important;color:#103d30!important}
-.danger{background:#a52d2d!important;color:white!important}
-.notice{padding:13px;border-radius:10px;background:#eaf4ee;overflow-wrap:anywhere}
+h1{margin:0 0 8px}p{line-height:1.5;overflow-wrap:anywhere}
+button,a{display:inline-block;padding:12px 15px;border:0;border-radius:10px;background:#17654c;color:white;text-decoration:none;font-weight:bold;margin:8px 6px 0 0;cursor:pointer}
+.secondary{background:#e8f1ec;color:#103d30}.danger{background:#a52d2d;color:white}
+.notice{padding:14px;background:#eaf4ee;border-radius:10px;overflow-wrap:anywhere}
 .error{background:#ffeded;color:#8c1d1d}.muted{color:#667085}
 .request{border:1px solid #e0e7e3;border-radius:13px;padding:15px;margin:12px 0}
-.request h3{margin:0 0 8px}
-button:disabled{opacity:.55}
+button:disabled{opacity:.5}
 </style>
 </head>
 <body>
-<header><h1>Smart Chama</h1><p>Membership approval centre</p></header>
+<header><h1>Smart Chama</h1><p>Membership Approval Centre</p></header>
 <main>
 <section class="card">
 <h2>Reviewer access</h2>
-<p id="status" class="notice">Checking your sign-in...</p>
-<button onclick="loadRequests()" id="refresh" disabled>Refresh requests</button>
-<a class="link secondary" href="smart_chama_group_management.html">Group Management</a>
-<a class="link secondary" href="smart_chama_main.html">Main System</a>
+<div id="status" class="notice">Checking your sign-in...</div>
+<button id="refresh" disabled onclick="loadRequests()">Refresh requests</button>
+<a class="secondary" href="smart_chama_group_management.html">Group Management</a>
+<a class="secondary" href="smart_chama_main.html">Main System</a>
 </section>
 <section class="card">
 <h2>Pending membership requests</h2>
-<p class="muted">Only the system owner, chairperson, or secretary can approve or reject requests. The database verifies permission for every decision.</p>
-<div id="requests">Loading requests...</div>
+<p class="muted">The system owner, chairperson, or secretary can review requests. Database functions enforce review permissions.</p>
+<div id="requests">Waiting for sign-in...</div>
 </section>
 </main>
 <script>
 const URL="https://kbrhjgnwbkszmjldbfor.supabase.co";
 const KEY="sb_publishable__Tck9HRnjrqdLdbpH36YPQ_-7vpek8B";
-const db=window.supabase.createClient(URL,KEY);
+const db=supabase.createClient(URL,KEY);
+const $=id=>document.getElementById(id);
 let currentUser=null;
 
-function statusMessage(text,error=false){
- const el=document.getElementById("status");
- el.textContent=text;
- el.className="notice"+(error?" error":"");
+function timeout(promise,ms,label){
+ return Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(new Error(label+" timed out. Refresh and sign in again.")),ms))]);
 }
-function node(tag,text,cls){
- const el=document.createElement(tag);
- el.textContent=text;
- if(cls)el.className=cls;
- return el;
+function status(text,error=false){
+ $("status").textContent=text;
+ $("status").className="notice"+(error?" error":"");
+}
+function el(tag,text,cls){
+ const n=document.createElement(tag);
+ n.textContent=text;
+ if(cls)n.className=cls;
+ return n;
 }
 async function init(){
  try{
-  const {data,error}=await db.auth.getSession();
+  const {data,error}=await timeout(db.auth.getSession(),12000,"Sign-in check");
   if(error)throw error;
   currentUser=data.session?.user;
   if(!currentUser){
-   statusMessage("Sign in through Member Access first.",true);
-   document.getElementById("requests").textContent="You must sign in to continue.";
+   status("You are not signed in. Open Member Access, sign in, then return here.",true);
+   $("requests").textContent="Sign in required.";
    return;
   }
-  const {data:owner,error:ownerError}=await db.from("smart_chama_system_admins")
-   .select("user_id").eq("user_id",currentUser.id).maybeSingle();
+  const {data:owner,error:ownerError}=await timeout(
+   db.from("smart_chama_system_admins").select("user_id")
+    .eq("user_id",currentUser.id).maybeSingle(),
+   12000,"Owner permission check");
   if(ownerError)throw ownerError;
-  statusMessage(owner
-   ?"System owner signed in: "+currentUser.email
-   :"Signed in: "+currentUser.email+". Group officer permissions will be checked by the database.");
-  document.getElementById("refresh").disabled=false;
+  status(owner
+   ?"System owner verified: "+currentUser.email
+   :"Signed in as "+currentUser.email+". Database permissions will determine which requests you can review.");
+  $("refresh").disabled=false;
   await loadRequests();
  }catch(e){
-  statusMessage("Could not initialize approvals: "+e.message,true);
-  document.getElementById("requests").textContent=e.message;
+  status("Approval page could not initialize: "+e.message,true);
+  $("requests").textContent="Error: "+e.message;
  }
 }
 async function loadRequests(){
- const target=document.getElementById("requests");
- target.textContent="Loading pending requests...";
+ if(!currentUser){status("Sign in first.",true);return;}
+ $("refresh").disabled=true;
+ $("requests").textContent="Loading pending requests...";
  try{
-  const [membersResult,groupsResult]=await Promise.all([
+  const {data:members,error:memberError}=await timeout(
    db.from("chama_members")
     .select("id,group_id,user_id,member_number,status,joined_at")
     .eq("status","pending").order("joined_at",{ascending:true}),
-   db.from("chama_groups").select("id,name")
-  ]);
-  if(membersResult.error)throw membersResult.error;
-  if(groupsResult.error)throw groupsResult.error;
-  const groups=new Map((groupsResult.data||[]).map(g=>[g.id,g.name]));
-  const requests=membersResult.data||[];
+   15000,"Pending request loading");
+  if(memberError)throw memberError;
+  const {data:groups,error:groupError}=await timeout(
+   db.from("chama_groups").select("id,name"),
+   12000,"Group names loading");
+  if(groupError)throw groupError;
+  const names=new Map((groups||[]).map(g=>[g.id,g.name]));
+  const target=$("requests");
   target.innerHTML="";
-  if(!requests.length){
-   target.appendChild(node("p","No pending membership requests.","notice"));
+  if(!members?.length){
+   target.appendChild(el("p","No pending membership requests.","notice"));
+   status("No pending requests found.");
    return;
   }
-  requests.forEach(m=>{
-   const card=node("article","","request");
-   card.appendChild(node("h3",groups.get(m.group_id)||"Chama group"));
-   card.appendChild(node("p","Membership number: "+(m.member_number||"Pending assignment")));
-   card.appendChild(node("p","User ID: "+m.user_id));
-   card.appendChild(node("p","Requested: "+(m.joined_at?new Date(m.joined_at).toLocaleString():"Date unavailable")));
-   const approve=node("button","Approve");
+  for(const m of members){
+   const card=el("article","","request");
+   card.appendChild(el("h3",names.get(m.group_id)||"Chama group"));
+   card.appendChild(el("p","Membership: "+(m.member_number||"Pending number")));
+   card.appendChild(el("p","User ID: "+m.user_id));
+   card.appendChild(el("p","Requested: "+(m.joined_at?new Date(m.joined_at).toLocaleString():"Unknown")));
+   const approve=el("button","Approve");
    approve.onclick=()=>review(m.id,"approve",approve);
-   const reject=node("button","Reject","danger");
+   const reject=el("button","Reject","danger");
    reject.onclick=()=>review(m.id,"reject",reject);
-   card.appendChild(approve);card.appendChild(reject);
+   card.appendChild(approve);
+   card.appendChild(reject);
    target.appendChild(card);
-  });
+  }
+  status(members.length+" pending request(s) loaded.");
  }catch(e){
-  target.textContent="Could not load requests: "+e.message;
-  statusMessage("Request loading failed. Check reviewer permissions: "+e.message,true);
- }
+  $("requests").textContent="Could not load requests: "+e.message;
+  status("Approval loading failed: "+e.message,true);
+ }finally{$("refresh").disabled=false;}
 }
 async function review(id,decision,button){
- const action=decision==="approve"?"approve this membership":"reject this membership";
- if(!confirm("Are you sure you want to "+action+"?"))return;
+ if(!confirm("Confirm "+decision+" for this membership request?"))return;
  button.disabled=true;
  try{
-  const {data,error}=await db.rpc("review_chama_membership",{
+  const {data,error}=await timeout(db.rpc("review_chama_membership",{
    p_membership_id:id,p_decision:decision
-  });
+  }),15000,"Membership review");
   if(error)throw error;
-  statusMessage(data||"Membership review completed.");
+  status(data||"Membership review completed.");
   await loadRequests();
  }catch(e){
-  statusMessage("Review failed: "+e.message,true);
+  status("Review failed: "+e.message,true);
   button.disabled=false;
  }
 }
