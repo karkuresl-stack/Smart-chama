@@ -114,6 +114,7 @@
     const user = sessionData.session.user;
     document.getElementById('signedIn').textContent =
       'Signed in as ' + user.email;
+    message.textContent = 'Checking system owner permissions...';
 const { data: ownerRecord, error: ownerError } = await db
   .from('smart_chama_system_admins')
   .select('user_id')
@@ -121,6 +122,7 @@ const { data: ownerRecord, error: ownerError } = await db
   .maybeSingle();
 
 const isSystemOwner = !ownerError && !!ownerRecord;
+    message.textContent = 'Loading groups from database...';
     let data;
 let error;
 
