@@ -14,7 +14,7 @@ header h1{font-size:24px;margin:0}
 button,a.button{display:inline-block;border:0;border-radius:10px;padding:13px 17px;font-size:15px;font-weight:700;cursor:pointer;text-decoration:none}
 button.primary,.button.primary{background:var(--green);color:white}
 button.secondary,.button.secondary{background:#e8f1ec;color:var(--dark)}
-button:disabled{opacity:.55;cursor:wait}
+button:disabled{opacity:.55;cursor:not-allowed}
 main{max-width:1000px;margin:24px auto;padding:0 16px 40px}
 .card{background:white;border:1px solid var(--border);border-radius:20px;padding:24px;margin-bottom:18px;box-shadow:0 4px 18px #15223808}
 h2{font-size:23px;margin:0 0 18px}
@@ -32,6 +32,7 @@ p{line-height:1.55}
 .member:last-child{border-bottom:0}
 #loginHelp{overflow-wrap:anywhere}
 footer{text-align:center;color:var(--muted);font-size:13px;padding:18px}
+.hidden{display:none!important}
 @media(max-width:600px){header{padding:18px}header h1{font-size:21px}main{margin-top:16px}.card{padding:19px}h2{font-size:21px}}
 </style>
 </head>
@@ -44,289 +45,377 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:18px}
 <main>
   <section class="card">
     <h2>Live member dashboard</h2>
-    <p class="muted">View your chama groups and membership information from Supabase.</p>
-    <div id="message" role="status" aria-live="polite">Starting Smart Chama...</div>
+    <p class="muted">View the groups and membership information available to your account.</p>
+    <div id="message" role="status" aria-live="polite">Connecting securely...</div>
     <div class="actions">
       <button id="refreshBtn" class="primary">Refresh groups</button>
       <a class="button secondary" href="smart_chama_supabase_ready-2.html">Member Access</a>
-      <a class="button secondary" href="smart_chama_admin.html">Administration</a>
+      <a id="adminLink" class="button secondary hidden" href="smart_chama_admin.html">Administration</a>
     </div>
   </section>
 
   <section class="card">
     <h2>My Chama Groups</h2>
-    <div id="groupsBox"><p class="muted">Waiting for connection...</p></div>
+    <div id="groupsBox"><p class="muted">Connecting...</p></div>
   </section>
 
   <section class="card">
     <h2>Group Members</h2>
-    <div id="membersBox"><p class="muted">Select a group to view its members.</p></div>
+    <div id="membersBox"><p class="muted">Select an authorized group to view its members.</p></div>
   </section>
 
   <section class="card">
     <h2>Important</h2>
-    <p class="muted">This page reads group and membership information. It does not record deposits, approve transactions, change balances, or delete financial records.</p>
-    <p id="loginHelp" class="muted">If you are not signed in, use Member Access first.</p>
+    <p class="muted">This dashboard does not record deposits, approve transactions, change balances, or delete financial records. Access to membership data is also controlled by Supabase database policies.</p>
+    <p id="loginHelp" class="muted">Sign in to view your authorized groups.</p>
   </section>
 </main>
 <footer>Smart Chama · Live Supabase connection</footer>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-(() => {
-  const PROJECT_URL = 'https://kbrhjgnwbkszmjldbfor.supabase.co';
-  const PUBLISHABLE_KEY = 'sb_publishable__Tck9HRnjrqdLdbpH36YPQ_-7vpek8B';
+<script type="module">
+const PROJECT_URL = "https://kbrhjgnwbkszmjldbfor.supabase.co";
+const PUBLISHABLE_KEY = "sb_publishable__Tck9HRnjrqdLdbpH36YPQ_-7vpek8B";
+const $ = id => document.getElementById(id);
 
-  const message = document.getElementById('message');
-  const groupsBox = document.getElementById('groupsBox');
-  const membersBox = document.getElementById('membersBox');
-  const refreshBtn = document.getElementById('refreshBtn');
-  const logoutBtn = document.getElementById('logoutBtn');
+let db = null;
+let currentUser = null;
+let isOwner = false;
+let busy = false;
+let memberships = [];
+let reviewerGroupIds = new Set();
+let allowedGroupIds = new Set();
+let authVersion = 0;
 
-  let db = null;
-  let currentUser = null;
-  let isSystemOwner = false;
-  let busy = false;
+function say(text, type = "") {
+  $("message").textContent = text;
+  $("message").className = type;
+}
 
-  function say(text, type = '') {
-    message.textContent = text;
-    message.className = type;
-  }
+function safe(value) {
+  return String(value ?? "").replace(/[&<>"']/g, c => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+  })[c]);
+}
 
-  function safe(value) {
-    return String(value ?? '').replace(/[&<>"']/g, c => ({
-      '&':'&amp;', '<':'&lt;', '>':'&gt;',
-      '"':'&quot;', "'":'&#39;'
-    })[c]);
-  }
+function withTimeout(promise, label, ms = 12000) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(label + " timed out. Check your connection and refresh.")),
+        ms
+      );
+    })
+  ]).finally(() => clearTimeout(timer));
+}
 
-  // A stalled network request should produce an error, not an endless spinner.
-  function withTimeout(promise, label, ms = 12000) {
-    let timer;
-    return Promise.race([
-      promise,
-      new Promise((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error(label + ' timed out after ' + (ms / 1000) + ' seconds. Check your connection and try again.')),
-          ms
-        );
-      })
-    ]).finally(() => clearTimeout(timer));
-  }
+function resetDashboard() {
+  currentUser = null;
+  isOwner = false;
+  memberships = [];
+  reviewerGroupIds = new Set();
+  allowedGroupIds = new Set();
+  $("adminLink").classList.add("hidden");
+  $("logoutBtn").hidden = true;
+  $("groupsBox").replaceChildren();
+  $("membersBox").textContent = "Sign in to view authorized group information.";
+}
 
-  function showError(prefix, error) {
-    const detail = error?.message || String(error || 'Unknown error');
-    say(prefix + ': ' + detail, 'error');
-  }
+function cardForGroup(group, membership = null) {
+  const card = document.createElement("div");
+  card.className = "group";
 
-  function groupCard(group, membership = null) {
-    const card = document.createElement('div');
-    card.className = 'group';
+  const status = membership?.status
+    ? '<p>Status: <span class="pill">' + safe(membership.status) + "</span></p>"
+    : "";
 
-    const status = membership?.status
-      ? '<p>Status: <span class="pill">' + safe(membership.status) + '</span></p>'
-      : '';
+  const number = membership?.member_number
+    ? "<p>Member number: <strong>" + safe(membership.member_number) + "</strong></p>"
+    : "";
 
-    const memberNo = membership?.member_number
-      ? '<p>Member number: <strong>' + safe(membership.member_number) + '</strong></p>'
-      : '';
+  card.innerHTML =
+    "<h3>" + safe(group.name || "Unnamed group") + "</h3>" +
+    '<p class="muted">' + safe(group.description || "No description provided.") + "</p>" +
+    number + status;
 
-    card.innerHTML =
-      '<h3>' + safe(group.name || 'Unnamed group') + '</h3>' +
-      '<p class="muted">' + safe(group.description || 'No description provided.') + '</p>' +
-      memberNo + status;
-
-    const button = document.createElement('button');
-    button.className = 'primary';
-    button.textContent = 'View Members';
-    button.addEventListener('click', () => loadMembers(group.id, group.name));
+  // Only the owner and authorized group reviewers get the roster button.
+  if (isOwner || reviewerGroupIds.has(group.id)) {
+    const button = document.createElement("button");
+    button.className = "primary";
+    button.textContent = "View Group Members";
+    button.addEventListener("click", () => loadMembers(group.id, group.name));
     card.appendChild(button);
-    groupsBox.appendChild(card);
   }
 
-  async function loadGroups() {
-    if (busy) return;
-    busy = true;
-    refreshBtn.disabled = true;
-    groupsBox.replaceChildren();
-    membersBox.innerHTML = '<p class="muted">Select a group to view its members.</p>';
-    say('Checking your sign-in session...');
+  $("groupsBox").appendChild(card);
+}
 
-    try {
-      if (!db) throw new Error('Supabase library is unavailable. Check your internet connection and reload.');
+async function loadDashboard() {
+  if (busy) return;
+  busy = true;
+  $("refreshBtn").disabled = true;
+  $("groupsBox").textContent = "Loading authorized groups...";
+  $("membersBox").textContent = "Select an authorized group to view its members.";
+  $("adminLink").classList.add("hidden");
 
-      const sessionResult = await withTimeout(
-        db.auth.getSession(),
-        'Checking your sign-in session'
-      );
+  try {
+    const { data: authData, error: authError } =
+      await withTimeout(db.auth.getUser(), "Verifying sign-in");
 
-      if (sessionResult.error) throw sessionResult.error;
-      currentUser = sessionResult.data?.session?.user || null;
+    if (authError) throw authError;
+    const user = authData.user;
 
-      if (!currentUser) {
-        logoutBtn.hidden = true;
-        say('You are not signed in. Open Member Access, sign in, then return here.', 'error');
-        groupsBox.innerHTML = '<p><a href="smart_chama_supabase_ready-2.html">Open Member Access and sign in</a></p>';
-        return;
-      }
-
-      logoutBtn.hidden = false;
-      say('Signed in as ' + currentUser.email + '. Checking owner permissions...');
-
-      // Owner check. If this fails, show the actual error rather than hang.
-      const ownerResult = await withTimeout(
-        db.from('smart_chama_system_admins')
-          .select('user_id')
-          .eq('user_id', currentUser.id)
-          .maybeSingle(),
-        'Checking system owner permissions'
-      );
-
-      if (ownerResult.error) throw new Error('Owner permission check failed: ' + ownerResult.error.message);
-      isSystemOwner = !!ownerResult.data;
-
-      let groups = [];
-      let memberships = [];
-
-      if (isSystemOwner) {
-        say('Owner verified. Loading groups from database...');
-        const result = await withTimeout(
-          db.from('chama_groups')
-            .select('id, name, description, created_at')
-            .order('created_at', { ascending: false }),
-          'Loading groups from database'
-        );
-        if (result.error) throw new Error('Could not load groups: ' + result.error.message);
-        groups = result.data || [];
-      } else {
-        say('Loading your group memberships from database...');
-        const result = await withTimeout(
-          db.from('chama_members')
-            .select('id, group_id, member_number, status, joined_at')
-            .eq('user_id', currentUser.id)
-            .neq('status', 'left')
-            .order('joined_at', { ascending: false }),
-          'Loading your group memberships'
-        );
-        if (result.error) throw new Error('Could not load memberships: ' + result.error.message);
-        memberships = result.data || [];
-
-        const ids = [...new Set(memberships.map(m => m.group_id).filter(Boolean))];
-        if (ids.length) {
-          const resultGroups = await withTimeout(
-            db.from('chama_groups')
-              .select('id, name, description, created_at')
-              .in('id', ids),
-            'Loading your chama group details'
-          );
-          if (resultGroups.error) throw new Error('Could not load group details: ' + resultGroups.error.message);
-          groups = resultGroups.data || [];
-        }
-      }
-
-      if (!groups.length) {
-        groupsBox.innerHTML = '<p>No groups were returned for this account.</p>' +
-          (isSystemOwner
-            ? '<p class="muted">The owner account was recognised, but the group query returned no rows. Check that groups exist and the database SELECT policy permits the owner to read them.</p>'
-            : '<p class="muted">Check that your membership is active and linked to this account.</p>');
-        say('Signed in as ' + currentUser.email + '. No groups found.', 'success');
-        return;
-      }
-
-      const membershipByGroup = new Map();
-      memberships.forEach(m => membershipByGroup.set(m.group_id, m));
-
-      groups.forEach(group => groupCard(group, membershipByGroup.get(group.id) || null));
-      say((isSystemOwner ? 'System owner' : 'Member') + ' · ' + currentUser.email +
-        ' · ' + groups.length + ' group(s) loaded successfully.', 'success');
-
-    } catch (error) {
-      showError('Dashboard could not finish loading', error);
-      groupsBox.innerHTML = '<p class="muted">Use Refresh groups to try again after addressing the error above.</p>';
-    } finally {
-      busy = false;
-      refreshBtn.disabled = false;
+    if (!user) {
+      resetDashboard();
+      say("You are not signed in. Sign in through Member Access first.", "error");
+      $("groupsBox").innerHTML =
+        '<a href="smart_chama_supabase_ready-2.html">Open Member Access</a>';
+      return;
     }
-  }
 
-  async function loadMembers(groupId, groupName) {
-    membersBox.innerHTML = '';
-    const heading = document.createElement('h3');
-    heading.textContent = groupName + ' — Members';
-    membersBox.appendChild(heading);
-    const loading = document.createElement('p');
-    loading.textContent = 'Loading members...';
-    membersBox.appendChild(loading);
+    currentUser = user;
+    const version = authVersion;
+    $("logoutBtn").hidden = false;
+    $("loginHelp").textContent = "Signed in as " + (user.email || user.id) + ".";
 
-    try {
+    // Check the owner registry.
+    const ownerResult = await withTimeout(
+      db.from("smart_chama_system_admins")
+        .select("user_id")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      "Verifying system-owner access"
+    );
+
+    if (ownerResult.error) {
+      throw new Error("Owner verification failed: " + ownerResult.error.message);
+    }
+    if (version !== authVersion) return;
+
+    isOwner = !!ownerResult.data;
+    $("adminLink").classList.toggle("hidden", !isOwner);
+
+    // Load only roles belonging to the signed-in user.
+    const roleResult = await withTimeout(
+      db.from("chama_member_roles")
+        .select("group_id, role")
+        .eq("user_id", user.id),
+      "Checking group roles"
+    );
+
+    if (roleResult.error) {
+      throw new Error("Could not verify group roles: " + roleResult.error.message);
+    }
+    if (version !== authVersion) return;
+
+    reviewerGroupIds = new Set(
+      (roleResult.data || [])
+        .filter(r => ["chairperson", "secretary"].includes(r.role))
+        .map(r => r.group_id)
+    );
+
+    let groups = [];
+
+    if (isOwner) {
+      say("System owner verified. Loading groups...");
       const result = await withTimeout(
-        db.from('chama_members')
-          .select('id, member_number, status, joined_at, user_id')
-          .eq('group_id', groupId)
-          .neq('status', 'left')
-          .order('joined_at', { ascending: false }),
-        'Loading group members'
+        db.from("chama_groups")
+          .select("id, name, description, created_at")
+          .order("created_at", { ascending: false }),
+        "Loading all groups"
+      );
+      if (result.error) throw new Error("Could not load groups: " + result.error.message);
+      groups = result.data || [];
+    } else {
+      say("Loading your memberships...");
+      const result = await withTimeout(
+        db.from("chama_members")
+          .select("id, group_id, member_number, status, joined_at")
+          .eq("user_id", user.id)
+          .in("status", ["active", "pending", "suspended"]),
+        "Loading your memberships"
       );
 
-      if (result.error) throw result.error;
-      const rows = result.data || [];
-      membersBox.replaceChildren(heading);
+      if (result.error) throw new Error("Could not load memberships: " + result.error.message);
+      memberships = result.data || [];
 
-      if (!rows.length) {
-        const empty = document.createElement('p');
-        empty.textContent = 'No active or pending members were returned for this group.';
-        membersBox.appendChild(empty);
-        return;
+      const ids = [...new Set(memberships.map(m => m.group_id).filter(Boolean))];
+      allowedGroupIds = new Set(ids);
+
+      if (ids.length) {
+        const resultGroups = await withTimeout(
+          db.from("chama_groups")
+            .select("id, name, description, created_at")
+            .in("id", ids)
+            .order("created_at", { ascending: false }),
+          "Loading your group details"
+        );
+        if (resultGroups.error) throw new Error("Could not load group details: " + resultGroups.error.message);
+        groups = resultGroups.data || [];
       }
-
-      rows.forEach(member => {
-        const div = document.createElement('div');
-        div.className = 'member';
-        div.innerHTML =
-          '<strong>' + safe(member.member_number || 'Number not assigned') + '</strong>' +
-          '<p>Status: ' + safe(member.status || 'unknown') + '</p>' +
-          '<p class="muted">Joined: ' + safe(member.joined_at ? new Date(member.joined_at).toLocaleDateString() : 'Not recorded') + '</p>';
-        membersBox.appendChild(div);
-      });
-    } catch (error) {
-      membersBox.replaceChildren(heading);
-      const p = document.createElement('p');
-      p.className = 'muted';
-      p.textContent = 'Could not load members: ' + (error?.message || String(error));
-      membersBox.appendChild(p);
     }
+
+    if (version !== authVersion) return;
+
+    $("groupsBox").replaceChildren();
+
+    if (!groups.length) {
+      $("groupsBox").textContent = isOwner
+        ? "No groups were returned for the owner account."
+        : "No memberships were found for this account. Request membership through Member Access.";
+      say("Signed in as " + (user.email || user.id) + ". No groups found.", "success");
+      return;
+    }
+
+    const membershipByGroup = new Map(memberships.map(m => [m.group_id, m]));
+    groups.forEach(group => cardForGroup(group, membershipByGroup.get(group.id) || null));
+
+    say((isOwner ? "System owner" : "Member") + " · " +
+      (user.email || user.id) + " · " + groups.length + " group(s) loaded.", "success");
+
+  } catch (error) {
+    resetDashboard();
+    say("Dashboard could not load securely: " + (error.message || String(error)), "error");
+  } finally {
+    busy = false;
+    $("refreshBtn").disabled = false;
+  }
+}
+
+async function loadMembers(groupId, groupName) {
+  if (!currentUser || (!isOwner && !reviewerGroupIds.has(groupId))) {
+    $("membersBox").textContent = "Access denied: you are not authorized to view this group's roster.";
+    return;
   }
 
-  refreshBtn.addEventListener('click', loadGroups);
+  $("membersBox").textContent = "Loading group members...";
 
-  logoutBtn.addEventListener('click', async () => {
-    logoutBtn.disabled = true;
-    try {
-      const result = await withTimeout(db.auth.signOut(), 'Signing out');
-      if (result.error) throw result.error;
-      window.location.href = 'smart_chama_supabase_ready-2.html';
-    } catch (error) {
-      showError('Sign-out failed', error);
-      logoutBtn.disabled = false;
+  try {
+    // Recheck owner or reviewer status before reading the roster.
+    const { data: authData, error: authError } = await withTimeout(
+      db.auth.getUser(), "Verifying current user"
+    );
+    if (authError || !authData.user || authData.user.id !== currentUser.id) {
+      throw new Error("Your session could not be verified. Sign in again.");
     }
-  });
 
-  async function start() {
-    try {
-      if (!window.supabase?.createClient) {
-        throw new Error('Supabase library did not load. Check internet access and reload this page.');
+    if (!isOwner) {
+      const roleCheck = await withTimeout(
+        db.from("chama_member_roles")
+          .select("group_id, role")
+          .eq("user_id", currentUser.id)
+          .eq("group_id", groupId)
+          .in("role", ["chairperson", "secretary"]),
+        "Verifying reviewer role"
+      );
+
+      if (roleCheck.error) throw roleCheck.error;
+      if (!(roleCheck.data || []).length) {
+        reviewerGroupIds.delete(groupId);
+        throw new Error("Access denied: you are not an authorized group reviewer.");
       }
-
-      db = window.supabase.createClient(PROJECT_URL, PUBLISHABLE_KEY);
-      await loadGroups();
-    } catch (error) {
-      showError('Smart Chama could not start', error);
-      groupsBox.innerHTML = '<p><a href="smart_chama_supabase_ready-2.html">Open Member Access</a></p>';
+    } else {
+      const ownerCheck = await withTimeout(
+        db.from("smart_chama_system_admins")
+          .select("user_id")
+          .eq("user_id", currentUser.id)
+          .maybeSingle(),
+        "Rechecking owner permission"
+      );
+      if (ownerCheck.error || !ownerCheck.data) {
+        isOwner = false;
+        $("adminLink").classList.add("hidden");
+        throw new Error("System-owner permission could not be verified.");
+      }
     }
-  }
 
-  start();
-})();
+    const result = await withTimeout(
+      db.from("chama_members")
+        .select("id, member_number, status, joined_at, user_id")
+        .eq("group_id", groupId)
+        .in("status", ["active", "pending", "suspended"])
+        .order("joined_at", { ascending: false }),
+      "Loading group members"
+    );
+
+    if (result.error) throw result.error;
+
+    const heading = document.createElement("h3");
+    heading.textContent = groupName + " — Members";
+    $("membersBox").replaceChildren(heading);
+
+    const rows = result.data || [];
+    if (!rows.length) {
+      const empty = document.createElement("p");
+      empty.textContent = "No member records are visible to this account.";
+      $("membersBox").appendChild(empty);
+      return;
+    }
+
+    rows.forEach(member => {
+      const div = document.createElement("div");
+      div.className = "member";
+      div.innerHTML =
+        "<strong>" + safe(member.member_number || "Number not assigned") + "</strong>" +
+        "<p>Status: " + safe(member.status || "unknown") + "</p>" +
+        '<p class="muted">Joined: ' +
+        safe(member.joined_at ? new Date(member.joined_at).toLocaleDateString() : "Not recorded") +
+        "</p>";
+      $("membersBox").appendChild(div);
+    });
+  } catch (error) {
+    $("membersBox").textContent =
+      "Could not display members: " + (error.message || String(error));
+  }
+}
+
+$("refreshBtn").addEventListener("click", loadDashboard);
+
+$("logoutBtn").addEventListener("click", async () => {
+  $("logoutBtn").disabled = true;
+  try {
+    const { error } = await withTimeout(db.auth.signOut(), "Signing out");
+    if (error) throw error;
+    authVersion++;
+    resetDashboard();
+    say("Signed out successfully.");
+    $("groupsBox").textContent = "Sign in through Member Access to continue.";
+    location.href = "smart_chama_supabase_ready-2.html";
+  } catch (error) {
+    say("Sign-out failed: " + (error.message || String(error)), "error");
+    $("logoutBtn").disabled = false;
+  }
+});
+
+async function start() {
+  try {
+    const { createClient } =
+      await import("https://esm.sh/@supabase/supabase-js@2");
+    db = createClient(PROJECT_URL, PUBLISHABLE_KEY);
+
+    db.auth.onAuthStateChange((event) => {
+      if (["SIGNED_IN", "SIGNED_OUT", "TOKEN_REFRESHED", "USER_UPDATED"].includes(event)) {
+        authVersion++;
+        setTimeout(() => {
+          if (event === "SIGNED_OUT") {
+            resetDashboard();
+            say("Signed out. Sign in through Member Access.", "error");
+          } else {
+            loadDashboard();
+          }
+        }, 0);
+      }
+    });
+
+    await loadDashboard();
+  } catch (error) {
+    resetDashboard();
+    say("Could not start dashboard: " + (error.message || String(error)), "error");
+  }
+}
+
+start();
 </script>
 </body>
 </html>
