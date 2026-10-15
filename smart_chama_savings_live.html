@@ -5,40 +5,46 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smart Chama - Live Savings</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
-body{font-family:Arial,sans-serif;background:#f2f6f3;color:#173b2a;margin:0;padding:20px}
+*{box-sizing:border-box}
+body{font-family:Arial,sans-serif;background:#f2f6f3;color:#173b2a;margin:0;padding:12px}
 header,.card{max-width:850px;margin:16px auto;background:white;padding:20px;border-radius:12px;box-shadow:0 3px 12px #0001}
-h1{margin:0 0 8px}input,select,button{box-sizing:border-box;width:100%;padding:12px;margin:7px 0;border:1px solid #ccd5ce;border-radius:7px;font-size:16px}
-button{background:#176b43;color:white;border:0;font-weight:bold}
-small{color:#56675c}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px;border-bottom:1px solid #ddd;overflow-wrap:anywhere}
-.tablewrap{overflow-x:auto}.status{padding:10px;background:#edf5ef;border-radius:7px;overflow-wrap:anywhere}
+h1{margin:0 0 8px}
+input,button{width:100%;padding:12px;margin:7px 0;border:1px solid #ccd5ce;border-radius:7px;font-size:16px}
+button{background:#176b43;color:white;border:0;font-weight:bold;cursor:pointer}
+button:disabled{opacity:.55;cursor:not-allowed}
+small{color:#56675c}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:9px;border-bottom:1px solid #ddd;overflow-wrap:anywhere}
+.tablewrap{overflow-x:auto}
+.status{padding:10px;background:#edf5ef;border-radius:7px;overflow-wrap:anywhere;line-height:1.5}
+.error{background:#fff0ef;color:#922}
 </style>
 </head>
 <body>
 <header>
 <h1>Smart Chama</h1>
 <p>Live Savings Management</p>
-<div class="status" id="connection">Connecting to Supabase...</div>
+<div class="status" id="connection">Connecting securely...</div>
 </header>
 
 <section class="card">
 <h2>Submit a deposit</h2>
-<p><small>Deposits submitted here remain pending until approved under the group's authorised process.</small></p>
+<p><small>Deposits remain pending until approved by an authorized officer.</small></p>
 <form id="depositForm">
 <label for="amount">Amount (KES)</label>
-<input id="amount" type="number" min="1" step="0.01" required>
+<input id="amount" type="number" min="1" max="100000000" step="0.01" required>
 <label for="reference">Payment reference (optional)</label>
 <input id="reference" maxlength="100" placeholder="e.g. M-Pesa transaction code">
-<button id="submitBtn" type="submit">Submit Pending Deposit</button>
+<button id="submitBtn" type="submit" disabled>Submit Pending Deposit</button>
 </form>
-<p id="formMessage"></p>
+<p id="formMessage" class="status" role="status" aria-live="polite"></p>
 </section>
 
 <section class="card">
 <h2>My savings transactions</h2>
-<button id="refreshBtn" type="button">Refresh Transactions</button>
-<p id="historyMessage">Loading transactions...</p>
+<button id="refreshBtn" type="button" disabled>Refresh Transactions</button>
+<p id="historyMessage">Checking your membership...</p>
 <div class="tablewrap">
 <table>
 <thead><tr><th>Date</th><th>Amount (KES)</th><th>Type</th><th>Status</th><th>Reference</th></tr></thead>
@@ -47,140 +53,208 @@ small{color:#56675c}table{width:100%;border-collapse:collapse}th,td{text-align:l
 </div>
 </section>
 
-<script>
-const SUPABASE_URL ='https://kbrhjgnwbkszmjldbfor.supabase.co';
-const SUPABASE_KEY ='sb_publishable__Tck9HRnjrqdLdbpH36YPQ_-7vpek8B';
+<script type="module">
+const SUPABASE_URL = "https://kbrhjgnwbkszmjldbfor.supabase.co";
+const SUPABASE_KEY = "sb_publishable__Tck9HRnjrqdLdbpH36YPQ_-7vpek8B";
 
-const connection = document.getElementById("connection");
-const formMessage = document.getElementById("formMessage");
-const historyMessage = document.getElementById("historyMessage");
-const submitBtn = document.getElementById("submitBtn");
-const tbody = document.getElementById("transactions");
+const $ = id => document.getElementById(id);
+let db = null;
+let user = null;
+let membership = null;
+let busy = false;
 
-let client = null;
-let currentUser = null;
+function say(id, text, error = false) {
+  $(id).textContent = text;
+  $(id).classList.toggle("error", error);
+}
 
-function safeText(value) {
+function withTimeout(promise, label, ms = 12000) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(label + " timed out. Check your connection and retry.")),
+        ms
+      );
+    })
+  ]).finally(() => clearTimeout(timer));
+}
+
+function safe(value) {
   return String(value ?? "").replace(/[&<>"']/g, c => ({
-    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
-  }[c]));
+    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+  })[c]);
 }
 
 async function loadTransactions() {
-  if (!client || !currentUser) return;
+  if (!db || !user || !membership) return;
 
-  historyMessage.textContent = "Loading transactions...";
-  tbody.innerHTML = "";
+  $("refreshBtn").disabled = true;
+  say("historyMessage", "Loading transactions...");
+  $("transactions").replaceChildren();
 
-  const { data, error } = await client
-    .from("savings_transactions")
-    .select("id, amount, transaction_type, transaction_date, reference, status")
-    .eq("member_id", currentUser.id)
-    .order("transaction_date", { ascending: false })
-    .limit(100);
+  try {
+    const { data: authData, error: authError } =
+      await withTimeout(db.auth.getUser(), "Verifying your session");
 
-  if (error) {
-    historyMessage.textContent = "Could not load transactions: " + error.message;
-    return;
+    if (authError || !authData.user || authData.user.id !== user.id) {
+      throw new Error("Your sign-in session could not be verified. Sign in again.");
+    }
+
+    const { data, error } = await withTimeout(
+      db.from("savings_transactions")
+        .select("id, amount, transaction_type, transaction_date, reference, status")
+        .eq("member_id", membership.id)
+        .order("transaction_date", { ascending: false })
+        .limit(100),
+      "Loading savings history"
+    );
+
+    if (error) throw error;
+
+    const rows = data || [];
+    say("historyMessage", rows.length
+      ? "Showing your latest transactions."
+      : "No transactions are visible for this membership yet.");
+
+    $("transactions").innerHTML = rows.map(t => `
+      <tr>
+        <td>${safe(t.transaction_date ? new Date(t.transaction_date).toLocaleDateString() : "")}</td>
+        <td>${safe(Number(t.amount).toFixed(2))}</td>
+        <td>${safe(t.transaction_type)}</td>
+        <td>${safe(t.status)}</td>
+        <td>${safe(t.reference || "—")}</td>
+      </tr>
+    `).join("");
+  } catch (error) {
+    say("historyMessage", "Could not load transactions: " +
+      (error.message || String(error)), true);
+  } finally {
+    $("refreshBtn").disabled = false;
   }
-
-  historyMessage.textContent = data.length
-    ? "Showing your latest transactions."
-    : "No transactions are visible for this account yet.";
-
-  tbody.innerHTML = data.map(t => `
-    <tr>
-      <td>${safeText(t.transaction_date ? new Date(t.transaction_date).toLocaleDateString() : "")}</td>
-      <td>${safeText(Number(t.amount).toFixed(2))}</td>
-      <td>${safeText(t.transaction_type)}</td>
-      <td>${safeText(t.status)}</td>
-      <td>${safeText(t.reference || "—")}</td>
-    </tr>
-  `).join("");
 }
 
 async function start() {
-  if (!window.supabase) {
-    connection.textContent = "Supabase library failed to load. Check your internet connection and reload.";
-    return;
-  }
-if (SUPABASE_URL.includes("YOUR_SUPABASE_URL") ||
-    SUPABASE_KEY.includes("YOUR_SUPABASE_PUBLISHABLE_KEY")) {
+  try {
+    const { createClient } =
+      await import("https://esm.sh/@supabase/supabase-js@2");
+    db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    connection.textContent = "Setup required: add the Supabase project URL and publishable key.";
-    return;
-  }
+    const { data: authData, error: authError } =
+      await withTimeout(db.auth.getUser(), "Checking sign-in");
 
-  client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    if (authError) throw authError;
+    user = authData.user;
 
-  const { data, error } = await client.auth.getSession();
-  if (error) {
-    connection.textContent = "Could not check sign-in: " + error.message;
-    return;
-  }
+    if (!user) {
+      say("connection", "Please sign in through Member Access first.", true);
+      say("historyMessage", "Sign in to view your savings transactions.");
+      $("historyMessage").innerHTML =
+        'Sign in through <a href="smart_chama_supabase_ready-2.html">Member Access</a>.';
+      return;
+    }
 
-  currentUser = data.session?.user || null;
-  if (!currentUser) {
-    connection.textContent = "Please sign in first through Member Access.";
-    return;
-  }
+    say("connection", "Signed in. Finding your active membership...");
 
-  connection.textContent = "Signed in. Checking database access...";
-  await loadTransactions();
-  if (historyMessage.textContent.startsWith("Could not load")) {
-    connection.textContent = "Signed in, but database access needs attention.";
-  } else {
-    connection.textContent = "Signed in. Savings database read test completed.";
+    const { data: rows, error: membershipError } = await withTimeout(
+      db.from("chama_members")
+        .select("id, group_id, member_number, status")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .order("joined_at", { ascending: false }),
+      "Finding active membership"
+    );
+
+    if (membershipError) throw membershipError;
+
+    if (!rows || rows.length === 0) {
+      say("connection", "No active membership found. Request membership and wait for approval.", true);
+      say("historyMessage", "An active membership is required to access savings.");
+      return;
+    }
+
+    if (rows.length > 1) {
+      say("connection",
+        "You belong to multiple active groups. This page needs a group selector before deposits can be submitted.", true);
+      say("historyMessage",
+        "No deposit was enabled to avoid assigning funds to the wrong group.");
+      return;
+    }
+
+    membership = rows[0];
+    $("submitBtn").disabled = false;
+    $("refreshBtn").disabled = false;
+
+    say("connection", "Ready · " + (user.email || user.id) +
+      " · Membership " + (membership.member_number || membership.id));
+    await loadTransactions();
+  } catch (error) {
+    say("connection", "Savings setup failed: " +
+      (error.message || String(error)), true);
+    say("historyMessage", "No deposit was submitted.", true);
   }
 }
 
-document.getElementById("depositForm").addEventListener("submit", async event => {
+$("depositForm").addEventListener("submit", async event => {
   event.preventDefault();
-  if (!client || !currentUser) {
-    formMessage.textContent = "Sign in through Member Access first.";
+
+  if (!db || !user || !membership || busy) {
+    say("formMessage", "An active membership and verified sign-in are required.", true);
     return;
   }
 
-  const amount = Number(document.getElementById("amount").value);
-  const reference = document.getElementById("reference").value.trim();
+  const amount = Number($("amount").value);
+  const reference = $("reference").value.trim();
 
-  if (!Number.isFinite(amount) || amount <= 0) {
-    formMessage.textContent = "Enter a valid amount greater than zero.";
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 100000000) {
+    say("formMessage", "Enter a valid positive amount within the permitted limit.", true);
     return;
   }
 
-  submitBtn.disabled = true;
-  formMessage.textContent = "Submitting pending deposit...";
+  busy = true;
+  $("submitBtn").disabled = true;
+  say("formMessage", "Verifying session and submitting a pending deposit...");
 
-  const { error } = await client.from("savings_transactions").insert({
-    member_id: currentUser.id,
-    amount,
-    transaction_type: "deposit",
-    reference: reference || null,
-    status: "pending"
-  });
+  try {
+    const { data: authData, error: authError } =
+      await withTimeout(db.auth.getUser(), "Verifying your session");
 
-  submitBtn.disabled = false;
+    if (authError || !authData.user || authData.user.id !== user.id) {
+      throw new Error("Your session is no longer valid. Sign in again.");
+    }
 
-  if (error) {
-    formMessage.textContent =
-      "Deposit was not saved: " + error.message +
-      ". No balance has been changed.";
-    return;
+    const { data, error } = await withTimeout(
+      db.rpc("submit_savings_deposit", {
+        p_member_id: membership.id,
+        p_amount: amount,
+        p_reference: reference || null
+      }),
+      "Submitting pending deposit"
+    );
+
+    if (error) throw error;
+
+    say("formMessage",
+      "Pending deposit submitted successfully. Transaction ID: " +
+      String(data) + ". It is not yet an approved savings balance.");
+
+    $("amount").value = "";
+    $("reference").value = "";
+    await loadTransactions();
+  } catch (error) {
+    say("formMessage",
+      "Deposit was not saved: " + (error.message || String(error)) +
+      ". No balance was changed.", true);
+  } finally {
+    busy = false;
+    $("submitBtn").disabled = !membership;
   }
-
-  formMessage.textContent =
-    "Pending deposit submitted. It is not yet an approved savings balance.";
-  document.getElementById("amount").value = "";
-  document.getElementById("reference").value = "";
-  await loadTransactions();
 });
 
-document.getElementById("refreshBtn").addEventListener("click", loadTransactions);
+$("refreshBtn").addEventListener("click", loadTransactions);
 
-start().catch(error => {
-  connection.textContent = "Unexpected error: " + error.message;
-});
+start();
 </script>
 </body>
 </html>
