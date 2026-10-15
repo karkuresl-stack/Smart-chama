@@ -105,7 +105,7 @@ async function loadTransactions() {
     const { data, error } = await withTimeout(
       db.from("savings_transactions")
         .select("id, amount, transaction_type, transaction_date, reference, status")
-        .eq("member_id", membership.id)
+      .eq("member_id", user.id)
         .order("transaction_date", { ascending: false })
         .limit(100),
       "Loading savings history"
@@ -173,7 +173,7 @@ async function start() {
       say("historyMessage", "An active membership is required to access savings.");
       return;
     }
-
+p
     if (rows.length > 1) {
       say("connection",
         "You belong to multiple active groups. This page needs a group selector before deposits can be submitted.", true);
@@ -226,7 +226,7 @@ $("depositForm").addEventListener("submit", async event => {
 
     const { data, error } = await withTimeout(
       db.rpc("submit_savings_deposit", {
-        p_member_id: membership.id,
+        p_member_id: user.id,
         p_amount: amount,
         p_reference: reference || null
       }),
