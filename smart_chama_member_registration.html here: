@@ -1,0 +1,107 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Smart Chama | Join a Group</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f1f5f9;color:#243247;font:16px Arial,sans-serif}
+header{background:#103d30;color:white;padding:22px}main{max-width:720px;margin:22px auto;padding:0 14px}
+.card{background:white;border-radius:16px;padding:20px;margin-bottom:18px}
+h1{margin:0 0 8px;font-size:25px}h2{margin-top:0}p{line-height:1.5}
+label{display:block;font-weight:bold;margin:14px 0 7px}
+select{width:100%;padding:14px;border:1px solid #ccd5d1;border-radius:10px;font-size:16px;background:white}
+button,.link{display:inline-block;border:0;border-radius:10px;background:#17654c;color:white;padding:13px 16px;font-weight:bold;font-size:15px;text-decoration:none;margin:8px 5px 0 0;cursor:pointer}
+.secondary{background:#e8f1ec!important;color:#103d30!important}
+.notice{padding:13px;border-radius:10px;background:#eaf4ee;overflow-wrap:anywhere}
+.error{background:#ffeded;color:#8c1d1d}.muted{color:#667085}
+button:disabled{opacity:.55}
+</style>
+</head>
+<body>
+<header><h1>Smart Chama</h1><p>Request membership in a chama</p></header>
+<main>
+<section class="card">
+<h2>Your account</h2>
+<p id="status" class="notice">Checking sign-in...</p>
+<a class="link secondary" href="smart_chama_main.html">Main System</a>
+<button class="secondary" onclick="signOut()">Sign out</button>
+</section>
+<section class="card">
+<h2>Join a chama</h2>
+<p class="muted">Choose the group you want to join. Your membership remains pending until an authorized reviewer approves it.</p>
+<label for="groups">Available chama groups</label>
+<select id="groups" disabled><option>Loading groups...</option></select>
+<button id="request" onclick="requestMembership()" disabled>Request membership</button>
+<p id="result" class="notice" hidden></p>
+</section>
+</main>
+<script>
+const URL="https://kbrhjgnwbkszmjldbfor.supabase.co";
+const KEY="sb_publishable__Tck9HRnjrqdLdbpH36YPQ_-7vpek8B";
+const db=window.supabase.createClient(URL,KEY);
+let user=null, groupList=[];
+
+function showStatus(text,error=false){
+ const el=document.getElementById("status");
+ el.textContent=text;
+ el.className="notice"+(error?" error":"");
+}
+function showResult(text,error=false){
+ const el=document.getElementById("result");
+ el.hidden=false;el.textContent=text;
+ el.className="notice"+(error?" error":"");
+}
+async function init(){
+ try{
+  const {data,error}=await db.auth.getSession();
+  if(error)throw error;
+  user=data.session?.user;
+  if(!user){
+   showStatus("You are signed out. Sign in through Member Access first.",true);
+   return;
+  }
+  showStatus("Signed in as "+user.email);
+  const {data:groups,error:groupError}=await db.from("chama_groups")
+    .select("id,name,description").order("name");
+  if(groupError)throw groupError;
+  groupList=groups||[];
+  const select=document.getElementById("groups");
+  select.innerHTML="";
+  if(!groupList.length){
+   select.innerHTML="<option value=''>No groups available</option>";
+   showResult("No groups are available yet.",true);
+   return;
+  }
+  groupList.forEach(g=>{
+   const o=document.createElement("option");
+   o.value=g.id;o.textContent=g.name;
+   select.appendChild(o);
+  });
+  select.disabled=false;
+  document.getElementById("request").disabled=false;
+ }catch(e){showStatus("Could not load registration: "+e.message,true);}
+}
+async function requestMembership(){
+ const groupId=document.getElementById("groups").value;
+ if(!groupId){showResult("Select a chama first.",true);return;}
+ const btn=document.getElementById("request");
+ btn.disabled=true;
+ try{
+  const {data,error}=await db.rpc("request_chama_membership",{p_group_id:groupId});
+  if(error)throw error;
+  showResult(data||"Request submitted. Await approval.");
+ }catch(e){showResult("Request failed: "+e.message,true);}
+ finally{btn.disabled=false;}
+}
+async function signOut(){
+ const {error}=await db.auth.signOut();
+ if(error){showResult(error.message,true);return;}
+ location.href="smart_chama_supabase_ready-2.html";
+}
+init();
+</script>
+</body>
+</html>
