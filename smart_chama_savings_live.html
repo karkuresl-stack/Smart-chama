@@ -4,303 +4,189 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Smart Chama - Live Savings</title>
+<title>Smart Chama - Group Savings</title>
 <style>
 *{box-sizing:border-box}
 body{font-family:Arial,sans-serif;background:#f2f6f3;color:#173b2a;margin:0;padding:12px}
 header,.card{max-width:850px;margin:16px auto;background:white;padding:20px;border-radius:12px;box-shadow:0 3px 12px #0001}
-h1{margin:0 0 8px}
+h1{margin:0 0 8px;color:#176b43}
 input,select,button{width:100%;padding:12px;margin:7px 0;border:1px solid #ccd5ce;border-radius:7px;font-size:16px}
 button{background:#176b43;color:white;border:0;font-weight:bold;cursor:pointer}
-button:disabled{opacity:.55;cursor:not-allowed}
+button:disabled{opacity:.55}
 small{color:#56675c}
-table{width:100%;border-collapse:collapse}
-th,td{text-align:left;padding:9px;border-bottom:1px solid #ddd;overflow-wrap:anywhere}
-.tablewrap{overflow-x:auto}
 .status{padding:10px;background:#edf5ef;border-radius:7px;overflow-wrap:anywhere;line-height:1.5}
 .error{background:#fff0ef;color:#922}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:9px;border-bottom:1px solid #ddd;overflow-wrap:anywhere}
 </style>
 </head>
 <body>
 <header>
 <h1>Smart Chama</h1>
-<p>Live Savings Management</p>
-<div class="status" id="connection">Connecting securely...</div>
+<p>Group Savings Management</p>
+<div id="connection" class="status">Connecting...</div>
 </header>
 
 <section class="card">
-<h2>Submit a deposit</h2>
-<p><small>Choose the correct group. Deposits remain pending until an authorised officer approves them. You can submit multiple deposits per day.</small></p>
-
-<form id="depositForm">
-<label for="groupSelect">Savings group</label>
-<select id="groupSelect" required disabled>
-<option value="">Loading your active groups...</option>
+<h2>Select savings group</h2>
+<select id="groupSelect" disabled>
+<option>Loading groups...</option>
 </select>
-
-<label for="amount">Amount (KES)</label>
-<input id="amount" type="number" min="0.01" max="100000000" step="0.01" required>
-
-<label for="reference">Payment reference (optional)</label>
-<input id="reference" maxlength="100" placeholder="e.g. M-Pesa transaction code">
-
-<button id="submitBtn" type="submit" disabled>Submit Pending Deposit</button>
-</form>
-<p id="formMessage" class="status" role="status" aria-live="polite"></p>
+<div class="status">
+Approved deposit total: <strong id="balance">KES 0.00</strong>
+</div>
+<p id="groupMessage"></p>
 </section>
 
 <section class="card">
-<h2>My savings transactions</h2>
-<p><small>Older transactions without a recorded group are labelled as unassigned and are not automatically attributed to any group.</small></p>
-<button id="refreshBtn" type="button" disabled>Refresh Transactions</button>
-<p id="historyMessage">Loading transaction history...</p>
+<h2>Submit a deposit</h2>
+<p><small>Deposits remain pending until an authorised officer approves them. Multiple deposits per day are permitted.</small></p>
+<form id="depositForm">
+<label for="amount">Amount (KES)</label>
+<input id="amount" type="number" min="0.01" max="100000000" step="0.01" required>
+<label for="reference">Payment reference (optional)</label>
+<input id="reference" maxlength="100" placeholder="M-Pesa reference">
+<button id="submitBtn" disabled>Submit Pending Deposit</button>
+</form>
+<p id="formMessage" class="status"></p>
+</section>
+
+<section class="card">
+<h2>Selected group's transactions</h2>
+<button id="refreshBtn" disabled>Refresh Group Savings</button>
+<p id="historyMessage">Loading...</p>
 <div class="tablewrap">
 <table>
-<thead>
-<tr><th>Date</th><th>Group</th><th>Amount (KES)</th><th>Type</th><th>Status</th><th>Reference</th></tr>
-</thead>
+<thead><tr><th>Date</th><th>Amount</th><th>Type</th><th>Status</th><th>Reference</th></tr></thead>
 <tbody id="transactions"></tbody>
 </table>
 </div>
 </section>
 
 <script type="module">
-const SUPABASE_URL = "https://kbrhjgnwbkszmjldbfor.supabase.co";
-const SUPABASE_KEY = "sb_publishable__Tck9HRnjrqdLdbpH36YPQ_-7vpek8B";
-const $ = id => document.getElementById(id);
+const URL="https://kbrhjgnwbkszmjldbfor.supabase.co";
+const KEY="sb_publishable__Tck9HRnjrqdLdbpH36YPQ_-7vpek8B";
+const $=id=>document.getElementById(id);
+let db,user,groups=[],busy=false;
 
-let db = null;
-let user = null;
-let memberships = [];
-let groupsById = new Map();
-let busy = false;
-
-function say(id, text, error = false) {
-  $(id).textContent = text;
-  $(id).classList.toggle("error", error);
+function msg(id,text,error=false){
+  $(id).textContent=text;
+  $(id).classList.toggle("error",error);
 }
-
-function withTimeout(promise, label, ms = 15000) {
-  let timer;
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      timer = setTimeout(
-        () => reject(new Error(label + " timed out. Check your connection and retry.")),
-        ms
-      );
-    })
-  ]).finally(() => clearTimeout(timer));
+function safe(v){
+  return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
-
-function safe(value) {
-  return String(value ?? "").replace(/[&<>"']/g, c => ({
-    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
-  })[c]);
+function selected(){
+  return groups.find(g=>g.group_id===$("groupSelect").value)||null;
 }
-
-function selectedMembership() {
-  return memberships.find(m => m.group_id === $("groupSelect").value) || null;
+function buttons(){
+  const ready=!!user&&!!selected()&&!busy;
+  $("submitBtn").disabled=!ready;
+  $("refreshBtn").disabled=!ready;
 }
-
-function updateButtons() {
-  const ready = !!db && !!user && !!selectedMembership() && !busy;
-  $("submitBtn").disabled = !ready;
-  $("refreshBtn").disabled = !db || !user || busy;
-}
-
-async function loadTransactions() {
-  if (!db || !user) return;
-
-  $("refreshBtn").disabled = true;
-  say("historyMessage", "Loading your transactions...");
+async function refresh(){
+  const group=selected();
+  if(!user||!group)return;
   $("transactions").replaceChildren();
-
-  try {
-    const { data: authData, error: authError } =
-      await withTimeout(db.auth.getUser(), "Verifying your session");
-
-    if (authError || !authData.user || authData.user.id !== user.id) {
-      throw new Error("Your sign-in session could not be verified. Sign in again.");
-    }
-
-    const { data, error } = await withTimeout(
-      db.from("savings_transactions")
-        .select("id, group_id, amount, transaction_type, transaction_date, reference, status")
-        .eq("member_id", user.id)
-        .order("transaction_date", { ascending: false })
-        .limit(100),
-      "Loading savings history"
-    );
-
-    if (error) throw error;
-
-    const rows = data || [];
-    say("historyMessage", rows.length
-      ? "Showing your latest transactions across your account."
-      : "No transactions are visible for your account yet.");
-
-    $("transactions").innerHTML = rows.map(t => {
-      const groupName = t.group_id
-        ? (groupsById.get(t.group_id) || "Group " + t.group_id)
-        : "Unassigned legacy transaction";
-
-      return `
-        <tr>
-          <td>${safe(t.transaction_date ? new Date(t.transaction_date).toLocaleString() : "")}</td>
-          <td>${safe(groupName)}</td>
-          <td>${safe(Number(t.amount).toFixed(2))}</td>
-          <td>${safe(t.transaction_type)}</td>
-          <td>${safe(t.status)}</td>
-          <td>${safe(t.reference || "—")}</td>
-        </tr>`;
-    }).join("");
-  } catch (error) {
-    say("historyMessage", "Could not load transactions: " +
-      (error.message || String(error)), true);
-  } finally {
-    updateButtons();
+  msg("historyMessage","Loading selected group...");
+  $("balance").textContent="Calculating...";
+  try{
+    const {data,error}=await db.from("savings_transactions")
+      .select("id,amount,transaction_type,transaction_date,reference,status")
+      .eq("member_id",user.id)
+      .eq("group_id",group.group_id)
+      .order("transaction_date",{ascending:false})
+      .limit(100);
+    if(error)throw error;
+    const rows=data||[];
+    const total=rows.reduce((sum,t)=>{
+      if(t.status!=="approved")return sum;
+      if(t.transaction_type==="deposit")return sum+Number(t.amount||0);
+      if(t.transaction_type==="withdrawal")return sum-Number(t.amount||0);
+      return sum;
+    },0);
+    $("balance").textContent="KES "+total.toFixed(2);
+    msg("historyMessage",rows.length?"Showing transactions for "+group.name+".":"No transactions recorded for this group.");
+    $("transactions").innerHTML=rows.map(t=>`<tr>
+      <td>${safe(t.transaction_date?new Date(t.transaction_date).toLocaleString():"")}</td>
+      <td>KES ${safe(Number(t.amount).toFixed(2))}</td>
+      <td>${safe(t.transaction_type)}</td>
+      <td>${safe(t.status)}</td>
+      <td>${safe(t.reference||"—")}</td>
+    </tr>`).join("");
+  }catch(e){
+    $("balance").textContent="Not available";
+    msg("historyMessage","Could not load this group's transactions: "+e.message,true);
   }
 }
-
-async function start() {
-  try {
-    const { createClient } =
-      await import("https://esm.sh/@supabase/supabase-js@2");
-
-    db = createClient(SUPABASE_URL, SUPABASE_KEY);
-
-    const { data: authData, error: authError } =
-      await withTimeout(db.auth.getUser(), "Checking sign-in");
-
-    if (authError) throw authError;
-    user = authData.user;
-
-    if (!user) {
-      say("connection", "Please sign in using the main system's configured login.", true);
-      say("historyMessage", "Sign in to view your savings transactions.");
+async function start(){
+  try{
+    const {createClient}=await import("https://esm.sh/@supabase/supabase-js@2");
+    db=createClient(URL,KEY);
+    const {data,error}=await db.auth.getUser();
+    if(error)throw error;
+    user=data.user;
+    if(!user){
+      msg("connection","Sign in using the main system login first.",true);
       return;
     }
-
-    say("connection", "Signed in. Loading your active group memberships...");
-
-    const { data: rows, error: membershipError } = await withTimeout(
-      db.from("chama_members")
-        .select("id, group_id, member_number, status")
-        .eq("user_id", user.id)
-        .eq("status", "active")
-        .order("joined_at", { ascending: false }),
-      "Finding active memberships"
-    );
-
-    if (membershipError) throw membershipError;
-
-    memberships = rows || [];
-
-    if (!memberships.length) {
-      $("groupSelect").innerHTML = '<option value="">No active groups available</option>';
-      say("connection", "No active membership found. Request membership and wait for approval.", true);
-      say("historyMessage", "An active membership is required to submit deposits.");
+    const {data:members,error:me}=await db.from("chama_members")
+      .select("group_id,member_number,status")
+      .eq("user_id",user.id).eq("status","active");
+    if(me)throw me;
+    if(!members?.length){
+      msg("connection","No active group memberships found.",true);
       return;
     }
-
-    const groupIds = [...new Set(memberships.map(m => m.group_id))];
-
-    const { data: groupRows, error: groupError } = await withTimeout(
-      db.from("chama_groups")
-        .select("id, name")
-        .in("id", groupIds),
-      "Loading group names"
-    );
-
-    if (groupError) throw groupError;
-
-    groupsById = new Map((groupRows || []).map(g => [g.id, g.name]));
-
-    $("groupSelect").innerHTML = memberships.map(m => {
-      const name = groupsById.get(m.group_id) || ("Group " + m.group_id);
-      const label = name + (m.member_number ? " · " + m.member_number : "");
-      return `<option value="${safe(m.group_id)}">${safe(label)}</option>`;
-    }).join("");
-
-    $("groupSelect").disabled = false;
-
-    say("connection",
-      "Ready · " + (user.email || user.id) +
-      " · " + memberships.length + " active group membership(s)");
-
-    updateButtons();
-    await loadTransactions();
-  } catch (error) {
-    say("connection", "Savings setup failed: " +
-      (error.message || String(error)), true);
-    say("historyMessage", "No deposit was submitted.", true);
+    const ids=[...new Set(members.map(m=>m.group_id))];
+    const {data:groupRows,error:ge}=await db.from("chama_groups")
+      .select("id,name").in("id",ids);
+    if(ge)throw ge;
+    const names=new Map((groupRows||[]).map(g=>[g.id,g.name]));
+    groups=members.map(m=>({group_id:m.group_id,name:names.get(m.group_id)||m.group_id}));
+    $("groupSelect").innerHTML=groups.map(g=>`<option value="${safe(g.group_id)}">${safe(g.name)}</option>`).join("");
+    $("groupSelect").disabled=false;
+    msg("connection","Signed in · "+(user.email||user.id));
+    msg("groupMessage","Select a group to view its records only.");
+    buttons();
+    await refresh();
+  }catch(e){
+    msg("connection","Setup failed: "+e.message,true);
+    msg("historyMessage","Could not initialise group savings.",true);
   }
 }
-
-$("groupSelect").addEventListener("change", updateButtons);
-
-$("depositForm").addEventListener("submit", async event => {
-  event.preventDefault();
-
-  const membership = selectedMembership();
-
-  if (!db || !user || !membership || busy) {
-    say("formMessage", "Sign in and select one of your active groups.", true);
-    return;
+$("groupSelect").addEventListener("change",()=>{buttons();refresh();});
+$("refreshBtn").addEventListener("click",refresh);
+$("depositForm").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const group=selected(),amount=Number($("amount").value),reference=$("reference").value.trim();
+  if(!group||!user||busy)return;
+  if(!Number.isFinite(amount)||amount<=0||amount>100000000){
+    msg("formMessage","Enter a valid amount.",true);return;
   }
-
-  const amount = Number($("amount").value);
-  const reference = $("reference").value.trim();
-
-  if (!Number.isFinite(amount) || amount <= 0 || amount > 100000000) {
-    say("formMessage", "Enter a valid positive amount within the permitted limit.", true);
-    return;
-  }
-
-  busy = true;
-  updateButtons();
-  say("formMessage", "Verifying session and submitting a pending deposit...");
-
-  try {
-    const { data: authData, error: authError } =
-      await withTimeout(db.auth.getUser(), "Verifying your session");
-
-    if (authError || !authData.user || authData.user.id !== user.id) {
-      throw new Error("Your session is no longer valid. Sign in again.");
-    }
-
-    const { data, error } = await withTimeout(
-      db.rpc("submit_savings_deposit", {
-        p_member_id: user.id,
-        p_amount: amount,
-        p_reference: reference || null,
-        p_group_id: membership.group_id
-      }),
-      "Submitting pending deposit"
-    );
-
-    if (error) throw error;
-
-    say("formMessage",
-      "Pending deposit submitted successfully. Transaction ID: " +
-      String(data) + ". It is not yet an approved savings balance.");
-
-    $("amount").value = "";
-    $("reference").value = "";
-    await loadTransactions();
-  } catch (error) {
-    say("formMessage",
-      "Deposit was not saved: " + (error.message || String(error)) +
-      ". No balance was changed.", true);
-  } finally {
-    busy = false;
-    updateButtons();
+  busy=true;buttons();
+  msg("formMessage","Submitting pending deposit...");
+  try{
+    const {data:auth,error:ae}=await db.auth.getUser();
+    if(ae||!auth.user||auth.user.id!==user.id)throw new Error("Session expired; sign in again.");
+    const {data,error}=await db.rpc("submit_savings_deposit",{
+      p_member_id:user.id,
+      p_amount:amount,
+      p_reference:reference||null,
+      p_group_id:group.group_id
+    });
+    if(error)throw error;
+    msg("formMessage","Deposit submitted and pending approval. Transaction ID: "+data);
+    $("amount").value="";
+    $("reference").value="";
+    await refresh();
+  }catch(e){
+    msg("formMessage","Deposit not submitted: "+e.message,true);
+  }finally{
+    busy=false;buttons();
   }
 });
-
-$("refreshBtn").addEventListener("click", loadTransactions);
-
 start();
 </script>
 </body>
