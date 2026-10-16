@@ -10,7 +10,7 @@
 body{font-family:Arial,sans-serif;background:#f2f6f3;color:#173b2a;margin:0;padding:12px}
 header,.card{max-width:850px;margin:16px auto;background:white;padding:20px;border-radius:12px;box-shadow:0 3px 12px #0001}
 h1{margin:0 0 8px}
-input,button{width:100%;padding:12px;margin:7px 0;border:1px solid #ccd5ce;border-radius:7px;font-size:16px}
+input,select,button{width:100%;padding:12px;margin:7px 0;border:1px solid #ccd5ce;border-radius:7px;font-size:16px}
 button{background:#176b43;color:white;border:0;font-weight:bold;cursor:pointer}
 button:disabled{opacity:.55;cursor:not-allowed}
 small{color:#56675c}
@@ -30,12 +30,20 @@ th,td{text-align:left;padding:9px;border-bottom:1px solid #ddd;overflow-wrap:any
 
 <section class="card">
 <h2>Submit a deposit</h2>
-<p><small>Deposits remain pending until approved by an authorized officer.</small></p>
+<p><small>Choose the correct group. Deposits remain pending until an authorised officer approves them. You can submit multiple deposits per day.</small></p>
+
 <form id="depositForm">
+<label for="groupSelect">Savings group</label>
+<select id="groupSelect" required disabled>
+<option value="">Loading your active groups...</option>
+</select>
+
 <label for="amount">Amount (KES)</label>
-<input id="amount" type="number" min="1" max="100000000" step="0.01" required>
+<input id="amount" type="number" min="0.01" max="100000000" step="0.01" required>
+
 <label for="reference">Payment reference (optional)</label>
 <input id="reference" maxlength="100" placeholder="e.g. M-Pesa transaction code">
+
 <button id="submitBtn" type="submit" disabled>Submit Pending Deposit</button>
 </form>
 <p id="formMessage" class="status" role="status" aria-live="polite"></p>
@@ -43,11 +51,14 @@ th,td{text-align:left;padding:9px;border-bottom:1px solid #ddd;overflow-wrap:any
 
 <section class="card">
 <h2>My savings transactions</h2>
+<p><small>Older transactions without a recorded group are labelled as unassigned and are not automatically attributed to any group.</small></p>
 <button id="refreshBtn" type="button" disabled>Refresh Transactions</button>
-<p id="historyMessage">Checking your membership...</p>
+<p id="historyMessage">Loading transaction history...</p>
 <div class="tablewrap">
 <table>
-<thead><tr><th>Date</th><th>Amount (KES)</th><th>Type</th><th>Status</th><th>Reference</th></tr></thead>
+<thead>
+<tr><th>Date</th><th>Group</th><th>Amount (KES)</th><th>Type</th><th>Status</th><th>Reference</th></tr>
+</thead>
 <tbody id="transactions"></tbody>
 </table>
 </div>
@@ -56,11 +67,12 @@ th,td{text-align:left;padding:9px;border-bottom:1px solid #ddd;overflow-wrap:any
 <script type="module">
 const SUPABASE_URL = "https://kbrhjgnwbkszmjldbfor.supabase.co";
 const SUPABASE_KEY = "sb_publishable__Tck9HRnjrqdLdbpH36YPQ_-7vpek8B";
-
 const $ = id => document.getElementById(id);
+
 let db = null;
 let user = null;
-let membership = null;
+let memberships = [];
+let groupsById = new Map();
 let busy = false;
 
 function say(id, text, error = false) {
@@ -68,7 +80,7 @@ function say(id, text, error = false) {
   $(id).classList.toggle("error", error);
 }
 
-function withTimeout(promise, label, ms = 12000) {
+function withTimeout(promise, label, ms = 15000) {
   let timer;
   return Promise.race([
     promise,
@@ -87,11 +99,21 @@ function safe(value) {
   })[c]);
 }
 
+function selectedMembership() {
+  return memberships.find(m => m.group_id === $("groupSelect").value) || null;
+}
+
+function updateButtons() {
+  const ready = !!db && !!user && !!selectedMembership() && !busy;
+  $("submitBtn").disabled = !ready;
+  $("refreshBtn").disabled = !db || !user || busy;
+}
+
 async function loadTransactions() {
-  if (!db || !user || !membership) return;
+  if (!db || !user) return;
 
   $("refreshBtn").disabled = true;
-  say("historyMessage", "Loading transactions...");
+  say("historyMessage", "Loading your transactions...");
   $("transactions").replaceChildren();
 
   try {
@@ -104,8 +126,8 @@ async function loadTransactions() {
 
     const { data, error } = await withTimeout(
       db.from("savings_transactions")
-        .select("id, amount, transaction_type, transaction_date, reference, status")
-      .eq("member_id", user.id)
+        .select("id, group_id, amount, transaction_type, transaction_date, reference, status")
+        .eq("member_id", user.id)
         .order("transaction_date", { ascending: false })
         .limit(100),
       "Loading savings history"
@@ -115,23 +137,29 @@ async function loadTransactions() {
 
     const rows = data || [];
     say("historyMessage", rows.length
-      ? "Showing your latest transactions."
-      : "No transactions are visible for this membership yet.");
+      ? "Showing your latest transactions across your account."
+      : "No transactions are visible for your account yet.");
 
-    $("transactions").innerHTML = rows.map(t => `
-      <tr>
-        <td>${safe(t.transaction_date ? new Date(t.transaction_date).toLocaleDateString() : "")}</td>
-        <td>${safe(Number(t.amount).toFixed(2))}</td>
-        <td>${safe(t.transaction_type)}</td>
-        <td>${safe(t.status)}</td>
-        <td>${safe(t.reference || "—")}</td>
-      </tr>
-    `).join("");
+    $("transactions").innerHTML = rows.map(t => {
+      const groupName = t.group_id
+        ? (groupsById.get(t.group_id) || "Group " + t.group_id)
+        : "Unassigned legacy transaction";
+
+      return `
+        <tr>
+          <td>${safe(t.transaction_date ? new Date(t.transaction_date).toLocaleString() : "")}</td>
+          <td>${safe(groupName)}</td>
+          <td>${safe(Number(t.amount).toFixed(2))}</td>
+          <td>${safe(t.transaction_type)}</td>
+          <td>${safe(t.status)}</td>
+          <td>${safe(t.reference || "—")}</td>
+        </tr>`;
+    }).join("");
   } catch (error) {
     say("historyMessage", "Could not load transactions: " +
       (error.message || String(error)), true);
   } finally {
-    $("refreshBtn").disabled = false;
+    updateButtons();
   }
 }
 
@@ -139,6 +167,7 @@ async function start() {
   try {
     const { createClient } =
       await import("https://esm.sh/@supabase/supabase-js@2");
+
     db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
     const { data: authData, error: authError } =
@@ -148,14 +177,12 @@ async function start() {
     user = authData.user;
 
     if (!user) {
-      say("connection", "Please sign in through Member Access first.", true);
+      say("connection", "Please sign in using the main system's configured login.", true);
       say("historyMessage", "Sign in to view your savings transactions.");
-      $("historyMessage").innerHTML =
-        'Sign in through <a href="smart_chama_supabase_ready-2.html">Member Access</a>.';
       return;
     }
 
-    say("connection", "Signed in. Finding your active membership...");
+    say("connection", "Signed in. Loading your active group memberships...");
 
     const { data: rows, error: membershipError } = await withTimeout(
       db.from("chama_members")
@@ -163,30 +190,46 @@ async function start() {
         .eq("user_id", user.id)
         .eq("status", "active")
         .order("joined_at", { ascending: false }),
-      "Finding active membership"
+      "Finding active memberships"
     );
 
     if (membershipError) throw membershipError;
 
-    if (!rows || rows.length === 0) {
+    memberships = rows || [];
+
+    if (!memberships.length) {
+      $("groupSelect").innerHTML = '<option value="">No active groups available</option>';
       say("connection", "No active membership found. Request membership and wait for approval.", true);
-      say("historyMessage", "An active membership is required to access savings.");
-      return;
-    }
-    if (rows.length > 1) {
-      say("connection",
-        "You belong to multiple active groups. This page needs a group selector before deposits can be submitted.", true);
-      say("historyMessage",
-        "No deposit was enabled to avoid assigning funds to the wrong group.");
+      say("historyMessage", "An active membership is required to submit deposits.");
       return;
     }
 
-    membership = rows[0];
-    $("submitBtn").disabled = false;
-    $("refreshBtn").disabled = false;
+    const groupIds = [...new Set(memberships.map(m => m.group_id))];
 
-    say("connection", "Ready · " + (user.email || user.id) +
-      " · Membership " + (membership.member_number || membership.id));
+    const { data: groupRows, error: groupError } = await withTimeout(
+      db.from("chama_groups")
+        .select("id, name")
+        .in("id", groupIds),
+      "Loading group names"
+    );
+
+    if (groupError) throw groupError;
+
+    groupsById = new Map((groupRows || []).map(g => [g.id, g.name]));
+
+    $("groupSelect").innerHTML = memberships.map(m => {
+      const name = groupsById.get(m.group_id) || ("Group " + m.group_id);
+      const label = name + (m.member_number ? " · " + m.member_number : "");
+      return `<option value="${safe(m.group_id)}">${safe(label)}</option>`;
+    }).join("");
+
+    $("groupSelect").disabled = false;
+
+    say("connection",
+      "Ready · " + (user.email || user.id) +
+      " · " + memberships.length + " active group membership(s)");
+
+    updateButtons();
     await loadTransactions();
   } catch (error) {
     say("connection", "Savings setup failed: " +
@@ -195,11 +238,15 @@ async function start() {
   }
 }
 
+$("groupSelect").addEventListener("change", updateButtons);
+
 $("depositForm").addEventListener("submit", async event => {
   event.preventDefault();
 
+  const membership = selectedMembership();
+
   if (!db || !user || !membership || busy) {
-    say("formMessage", "An active membership and verified sign-in are required.", true);
+    say("formMessage", "Sign in and select one of your active groups.", true);
     return;
   }
 
@@ -212,7 +259,7 @@ $("depositForm").addEventListener("submit", async event => {
   }
 
   busy = true;
-  $("submitBtn").disabled = true;
+  updateButtons();
   say("formMessage", "Verifying session and submitting a pending deposit...");
 
   try {
@@ -227,7 +274,8 @@ $("depositForm").addEventListener("submit", async event => {
       db.rpc("submit_savings_deposit", {
         p_member_id: user.id,
         p_amount: amount,
-        p_reference: reference || null
+        p_reference: reference || null,
+        p_group_id: membership.group_id
       }),
       "Submitting pending deposit"
     );
@@ -247,7 +295,7 @@ $("depositForm").addEventListener("submit", async event => {
       ". No balance was changed.", true);
   } finally {
     busy = false;
-    $("submitBtn").disabled = !membership;
+    updateButtons();
   }
 });
 
