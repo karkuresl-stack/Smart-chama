@@ -19,9 +19,12 @@ small{color:#56675c}
 .tablewrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse}
 th,td{text-align:left;padding:9px;border-bottom:1px solid #ddd;overflow-wrap:anywhere}
+.secondary{background:#52665a}
+.note{font-size:.93rem;line-height:1.5}
 </style>
 </head>
 <body>
+
 <header>
 <h1>Smart Chama</h1>
 <p>Group Savings Management</p>
@@ -40,25 +43,40 @@ Approved deposit total: <strong id="balance">KES 0.00</strong>
 </section>
 
 <section class="card">
-<h2>Submit a deposit</h2>
-<p><small>Deposits remain pending until an authorised officer approves them. Multiple deposits per day are permitted.</small></p>
+<h2>Submit a manual deposit</h2>
+<p class="note"><small>Use this for deposits made outside the M-Pesa prompt. Manual deposits remain pending until an authorised officer approves them.</small></p>
 <form id="depositForm">
-<label for="amount">Amount (KES)</label>
-<input id="amount" type="number" min="0.01" max="100000000" step="0.01" required>
+<label for="manualAmount">Amount (KES)</label>
+<input id="manualAmount" type="number" min="0.01" max="100000000" step="0.01" required>
 <label for="reference">Payment reference (optional)</label>
-<input id="reference" maxlength="100" placeholder="M-Pesa reference">
-<button id="submitBtn" disabled>Submit Pending Deposit</button>
+<input id="reference" maxlength="100" placeholder="M-Pesa receipt number">
+<button id="submitBtn" type="submit" disabled>Submit Pending Deposit</button>
 </form>
-<p id="formMessage" class="status"></p>
+<p id="manualMessage" class="status" aria-live="polite"></p>
+</section>
+
+<section class="card">
+<h2>Pay with M-Pesa</h2>
+<p class="note">Enter the amount and the Kenyan M-Pesa number that should receive the STK Push prompt.</p>
+<form id="mpesaForm">
+<label for="mpesaAmount">Amount (KES)</label>
+<input id="mpesaAmount" type="number" min="1" max="150000" step="1" placeholder="Enter whole KES amount" required>
+<label for="mpesaPhone">M-Pesa phone number</label>
+<input id="mpesaPhone" type="tel" inputmode="tel" placeholder="07XXXXXXXX or 2547XXXXXXXX" autocomplete="tel" required>
+<button id="mpesaBtn" type="submit" disabled>Pay with M-Pesa</button>
+</form>
+<p id="mpesaMessage" class="status" aria-live="polite">Sign in and select a savings group to continue.</p>
 </section>
 
 <section class="card">
 <h2>Selected group's transactions</h2>
-<button id="refreshBtn" disabled>Refresh Group Savings</button>
+<button id="refreshBtn" class="secondary" disabled>Refresh Group Savings</button>
 <p id="historyMessage">Loading...</p>
 <div class="tablewrap">
 <table>
-<thead><tr><th>Date</th><th>Amount</th><th>Type</th><th>Status</th><th>Reference</th></tr></thead>
+<thead>
+<tr><th>Date</th><th>Amount</th><th>Type</th><th>Status</th><th>Reference</th></tr>
+</thead>
 <tbody id="transactions"></tbody>
 </table>
 </div>
@@ -67,30 +85,52 @@ Approved deposit total: <strong id="balance">KES 0.00</strong>
 <script type="module">
 const URL="https://kbrhjgnwbkszmjldbfor.supabase.co";
 const KEY="sb_publishable__Tck9HRnjrqdLdbpH36YPQ_-7vpek8B";
+const STK_URL=URL+"/functions/v1/mpesa-stk-push";
 const $=id=>document.getElementById(id);
+
 let db,user,groups=[],busy=false;
 
 function msg(id,text,error=false){
   $(id).textContent=text;
   $(id).classList.toggle("error",error);
 }
+
 function safe(v){
-  return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  return String(v??"").replace(/[&<>"']/g,c=>({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[c]));
 }
+
 function selected(){
   return groups.find(g=>g.group_id===$("groupSelect").value)||null;
 }
+
 function buttons(){
   const ready=!!user&&!!selected()&&!busy;
   $("submitBtn").disabled=!ready;
+  $("mpesaBtn").disabled=!ready;
   $("refreshBtn").disabled=!ready;
+  $("groupSelect").disabled=!user||busy||!groups.length;
 }
+
+function normalizePhone(raw){
+  let p=String(raw||"").replace(/[\s()+-]/g,"");
+  if(/^0[17]\d{8}$/.test(p))p="254"+p.slice(1);
+  else if(/^[17]\d{8}$/.test(p))p="254"+p;
+  if(!/^254[17]\d{8}$/.test(p)){
+    throw new Error("Enter a valid Kenyan number, e.g. 0712345678 or 254712345678.");
+  }
+  return p;
+}
+
 async function refresh(){
   const group=selected();
   if(!user||!group)return;
+
   $("transactions").replaceChildren();
   msg("historyMessage","Loading selected group...");
   $("balance").textContent="Calculating...";
+
   try{
     const {data,error}=await db.from("savings_transactions")
       .select("id,amount,transaction_type,transaction_date,reference,status")
@@ -98,7 +138,9 @@ async function refresh(){
       .eq("group_id",group.group_id)
       .order("transaction_date",{ascending:false})
       .limit(100);
+
     if(error)throw error;
+
     const rows=data||[];
     const total=rows.reduce((sum,t)=>{
       if(t.status!=="approved")return sum;
@@ -106,8 +148,12 @@ async function refresh(){
       if(t.transaction_type==="withdrawal")return sum-Number(t.amount||0);
       return sum;
     },0);
+
     $("balance").textContent="KES "+total.toFixed(2);
-    msg("historyMessage",rows.length?"Showing transactions for "+group.name+".":"No transactions recorded for this group.");
+    msg("historyMessage",rows.length
+      ?"Showing transactions for "+group.name+"."
+      :"No transactions recorded for this group.");
+
     $("transactions").innerHTML=rows.map(t=>`<tr>
       <td>${safe(t.transaction_date?new Date(t.transaction_date).toLocaleString():"")}</td>
       <td>KES ${safe(Number(t.amount).toFixed(2))}</td>
@@ -115,78 +161,196 @@ async function refresh(){
       <td>${safe(t.status)}</td>
       <td>${safe(t.reference||"—")}</td>
     </tr>`).join("");
+
   }catch(e){
     $("balance").textContent="Not available";
-    msg("historyMessage","Could not load this group's transactions: "+e.message,true);
+    msg("historyMessage","Could not load transactions: "+e.message,true);
   }
 }
+
 async function start(){
   try{
     const {createClient}=await import("https://esm.sh/@supabase/supabase-js@2");
     db=createClient(URL,KEY);
+
     const {data,error}=await db.auth.getUser();
     if(error)throw error;
     user=data.user;
+
     if(!user){
       msg("connection","Sign in using the main system login first.",true);
+      msg("mpesaMessage","Sign in through the main system before requesting payment.",true);
+      buttons();
       return;
     }
+
     const {data:members,error:me}=await db.from("chama_members")
       .select("group_id,member_number,status")
-      .eq("user_id",user.id).eq("status","active");
+      .eq("user_id",user.id)
+      .eq("status","active");
+
     if(me)throw me;
+
     if(!members?.length){
       msg("connection","No active group memberships found.",true);
+      msg("mpesaMessage","An active group membership is required before paying.",true);
+      buttons();
       return;
     }
+
     const ids=[...new Set(members.map(m=>m.group_id))];
     const {data:groupRows,error:ge}=await db.from("chama_groups")
       .select("id,name").in("id",ids);
+
     if(ge)throw ge;
+
     const names=new Map((groupRows||[]).map(g=>[g.id,g.name]));
-    groups=members.map(m=>({group_id:m.group_id,name:names.get(m.group_id)||m.group_id}));
-    $("groupSelect").innerHTML=groups.map(g=>`<option value="${safe(g.group_id)}">${safe(g.name)}</option>`).join("");
+    groups=members.map(m=>({
+      group_id:m.group_id,
+      name:names.get(m.group_id)||m.group_id
+    }));
+
+    $("groupSelect").innerHTML=groups.map(g=>
+      `<option value="${safe(g.group_id)}">${safe(g.name)}</option>`
+    ).join("");
+
     $("groupSelect").disabled=false;
     msg("connection","Signed in · "+(user.email||user.id));
-    msg("groupMessage","Select a group to view its records only.");
+    msg("groupMessage","Select a group to view its records.");
+    msg("mpesaMessage","Ready. Enter an amount and the phone number to receive the prompt.");
     buttons();
     await refresh();
+
   }catch(e){
     msg("connection","Setup failed: "+e.message,true);
     msg("historyMessage","Could not initialise group savings.",true);
+    msg("mpesaMessage","Setup failed: "+e.message,true);
   }
 }
-$("groupSelect").addEventListener("change",()=>{buttons();refresh();});
+
+$("groupSelect").addEventListener("change",()=>{
+  buttons();
+  refresh();
+});
+
 $("refreshBtn").addEventListener("click",refresh);
+
 $("depositForm").addEventListener("submit",async e=>{
   e.preventDefault();
-  const group=selected(),amount=Number($("amount").value),reference=$("reference").value.trim();
+
+  const group=selected();
+  const amount=Number($("manualAmount").value);
+  const reference=$("reference").value.trim();
+
   if(!group||!user||busy)return;
+
   if(!Number.isFinite(amount)||amount<=0||amount>100000000){
-    msg("formMessage","Enter a valid amount.",true);return;
+    msg("manualMessage","Enter a valid amount.",true);
+    return;
   }
-  busy=true;buttons();
-  msg("formMessage","Submitting pending deposit...");
+
+  busy=true;
+  buttons();
+  msg("manualMessage","Submitting manual deposit...");
+
   try{
     const {data:auth,error:ae}=await db.auth.getUser();
-    if(ae||!auth.user||auth.user.id!==user.id)throw new Error("Session expired; sign in again.");
+    if(ae||!auth.user||auth.user.id!==user.id){
+      throw new Error("Session expired; sign in again.");
+    }
+
     const {data,error}=await db.rpc("submit_savings_deposit",{
       p_member_id:user.id,
       p_amount:amount,
       p_reference:reference||null,
       p_group_id:group.group_id
     });
+
     if(error)throw error;
-    msg("formMessage","Deposit submitted and pending approval. Transaction ID: "+data);
-    $("amount").value="";
+
+    msg("manualMessage","Deposit submitted and pending approval. Transaction ID: "+data);
+    $("manualAmount").value="";
     $("reference").value="";
     await refresh();
+
   }catch(e){
-    msg("formMessage","Deposit not submitted: "+e.message,true);
+    msg("manualMessage","Deposit not submitted: "+e.message,true);
   }finally{
-    busy=false;buttons();
+    busy=false;
+    buttons();
   }
 });
+
+$("mpesaForm").addEventListener("submit",async e=>{
+  e.preventDefault();
+
+  const group=selected();
+  const amount=Number($("mpesaAmount").value);
+  let phone;
+
+  if(!group||!user||busy)return;
+
+  if(!Number.isInteger(amount)||amount<1||amount>150000){
+    msg("mpesaMessage","Enter a whole KES amount from KES 1 to KES 150,000.",true);
+    return;
+  }
+
+  try{
+    phone=normalizePhone($("mpesaPhone").value);
+  }catch(err){
+    msg("mpesaMessage",err.message,true);
+    return;
+  }
+
+  busy=true;
+  buttons();
+  msg("mpesaMessage","Requesting the M-Pesa prompt. Please wait...");
+
+  try{
+    const {data:auth,error:ae}=await db.auth.getSession();
+    const session=auth?.session;
+
+    if(ae||!session?.access_token||session.user?.id!==user.id){
+      throw new Error("Session expired. Sign in through the main system again.");
+    }
+
+    const response=await fetch(STK_URL,{
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "Authorization":"Bearer "+session.access_token,
+        "apikey":KEY
+      },
+      body:JSON.stringify({amount,phone})
+    });
+
+    const result=await response.json().catch(()=>({}));
+
+    if(!response.ok){
+      throw new Error(result.error||result.message||"M-Pesa request failed (HTTP "+response.status+").");
+    }
+
+    if(result.paymentConfirmed===true){
+      msg("mpesaMessage","Payment confirmed by the backend. Refreshing savings.");
+      $("mpesaAmount").value="";
+      await refresh();
+    }else{
+      const detail=result.message||result.ResultDesc||result.error||
+        "Check your phone for the STK Push prompt. Only enter your PIN if you initiated this payment.";
+
+      msg("mpesaMessage",
+        "Prompt request accepted; payment is NOT yet confirmed. "+detail+
+        " Savings should update only after the verified callback completes.");
+    }
+
+  }catch(err){
+    msg("mpesaMessage","Could not start M-Pesa payment: "+err.message,true);
+  }finally{
+    busy=false;
+    buttons();
+  }
+});
+
 start();
 </script>
 </body>
