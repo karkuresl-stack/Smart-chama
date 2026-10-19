@@ -69,6 +69,13 @@ Approved deposit total: <strong id="balance">KES 0.00</strong>
 </section>
 
 <section class="card">
+<h2>Daraja sandbox connection test</h2>
+<p class="note">Administrator-only diagnostic. Checks whether Smart Chama can authenticate with Safaricom's sandbox. It does not request an STK Push or move money.</p>
+<button id="darajaTestBtn" class="secondary" type="button" disabled>Test Sandbox Connection</button>
+<p id="darajaTestMessage" class="status" aria-live="polite">Sign in with an authorised system administrator account to run this check.</p>
+</section>
+
+<section class="card">
 <h2>Selected group's transactions</h2>
 <button id="refreshBtn" class="secondary" disabled>Refresh Group Savings</button>
 <p id="historyMessage">Loading...</p>
@@ -234,6 +241,37 @@ $("groupSelect").addEventListener("change",()=>{
 });
 
 $("refreshBtn").addEventListener("click",refresh);
+
+$("darajaTestBtn").addEventListener("click",async()=>{
+  if(!db||!user||busy)return;
+  busy=true;
+  buttons();
+  $("darajaTestBtn").disabled=true;
+  msg("darajaTestMessage","Checking authenticated Daraja sandbox connection...");
+  try{
+    const {data:auth,error:ae}=await db.auth.getSession();
+    const session=auth?.session;
+    if(ae||!session?.access_token||session.user?.id!==user.id){
+      throw new Error("Session expired. Sign in again through the main system.");
+    }
+    const response=await fetch(URL+"/functions/v1/daraja-auth-check",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","Authorization":"Bearer "+session.access_token,"apikey":KEY},
+      body:JSON.stringify({})
+    });
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok||result.ok!==true){
+      throw new Error(result.error||result.message||("Diagnostic failed (HTTP "+response.status+")."));
+    }
+    msg("darajaTestMessage",result.message||"Daraja sandbox authentication succeeded. No payment was initiated.");
+  }catch(err){
+    msg("darajaTestMessage","Sandbox check not successful: "+err.message,true);
+  }finally{
+    busy=false;
+    buttons();
+    $("darajaTestBtn").disabled=!user;
+  }
+});
 
 $("depositForm").addEventListener("submit",async e=>{
   e.preventDefault();
