@@ -117,6 +117,7 @@ function buttons(){
   $("submitBtn").disabled=!ready;
   $("mpesaBtn").disabled=!ready;
   $("refreshBtn").disabled=!ready;
+  $("darajaTestBtn").disabled=!user||busy;
   $("groupSelect").disabled=!user||busy||!groups.length;
 }
 
