@@ -321,7 +321,11 @@ $("mpesaForm").addEventListener("submit",async e=>{
         "Authorization":"Bearer "+session.access_token,
         "apikey":KEY
       },
-      body:JSON.stringify({amount,phone})
+     body: JSON.stringify({
+  amount,
+  phone,
+  group_id: selected().group_id
+}) 
     });
 
     const result=await response.json().catch(()=>({}));
