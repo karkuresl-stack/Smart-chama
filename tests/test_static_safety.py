@@ -5,6 +5,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 LOANS = (ROOT / "smart_chama_loans.html").read_text(encoding="utf-8")
 MEMBER = (ROOT / "smart_chama_supabase_ready-2.html").read_text(encoding="utf-8")
+DASHBOARD = (ROOT / "smart_chama_live_dashboard.html").read_text(encoding="utf-8")
+PORTAL = (ROOT / "smart_chama_main.html").read_text(encoding="utf-8")
 PLAN = (ROOT / "docs" / "ISOLATED_TESTING_PLAN.md").read_text(encoding="utf-8")
 
 
@@ -24,6 +26,17 @@ class StaticSafetyChecks(unittest.TestCase):
     def test_demo_password_not_advertised_on_member_page(self):
         self.assertNotRegex(MEMBER, re.compile(r"chama123", re.IGNORECASE))
         self.assertNotRegex(MEMBER, re.compile(r"demo\s*/\s*chama123", re.IGNORECASE))
+
+    def test_portal_keeps_existing_modules_and_routes_to_single_login(self):
+        self.assertIn('href="smart_chama_supabase_ready-2.html"', PORTAL)
+        self.assertIn("Savings & Transactions", PORTAL)
+        self.assertIn("Loans & Repayments", PORTAL)
+        self.assertIn("Officer Approvals", PORTAL)
+
+    def test_dashboard_normalizes_role_names_and_keeps_server_authorization_authoritative(self):
+        self.assertIn('replace(/[\\\\s-]+/g, "_")', DASHBOARD)
+        self.assertIn('if (isOwner || hasRole("treasurer", "secretary", "chairperson"', DASHBOARD)
+        self.assertIn("each module and Supabase RLS/RPC must independently enforce access", DASHBOARD)
 
     def test_test_branch_is_not_mistaken_for_isolated_database(self):
         self.assertIn("A dedicated Supabase database branch", PLAN)
