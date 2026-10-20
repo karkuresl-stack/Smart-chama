@@ -61,3 +61,13 @@ No production rollout until the isolated tests pass, security advisor findings a
 - The loan page currently shows committee-review and repayment controls before the database has established whether the current user is authorized. Database RPC authorization remains the actual security boundary, but the UI should be role-gated to reduce confusion and avoid presenting privileged actions to ordinary members.
 - The loan page currently loads the production project configuration. Do not perform test signups, loan submissions, review decisions, or repayment writes from this page until a separate test backend is configured.
 - No browser-based end-to-end tests have been run in this environment. Mark tests as pending rather than passed until there is an isolated backend and test account.
+
+
+## Latest production security-advisor snapshot (2026-10-20)
+Read-only advisor checks reported:
+- Leaked-password protection is disabled. Enable it in Supabase Auth settings; this is a dashboard setting and was not changed automatically.
+- Fourteen authenticated-callable SECURITY DEFINER functions are flagged. Review each function's internal authorization and intended client call path individually; do not blanket-revoke execution because legitimate member/officer workflows may depend on these RPCs.
+- `public.mpesa_payments` has RLS enabled and no policies. Treat as service-role-only unless a reviewed requirement demonstrates otherwise; do not add broad policies just to clear the warning.
+- Performance advisor reports overlapping permissive SELECT policies on `chama_groups`, `chama_member_roles`, `chama_members`, and `savings_transactions`. Review policy semantics and consolidate only with equivalent positive/negative authorization tests.
+- Twelve indexes are reported unused at the time of the snapshot. Do not drop them until query patterns and production usage have been assessed.
+- These checks were read-only. No production SQL, auth settings, records, or policies were changed.
