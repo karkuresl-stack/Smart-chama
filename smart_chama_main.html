@@ -1,72 +1,21 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smart Chama | Main System</title>
 <style>
-*{box-sizing:border-box}
-body{margin:0;font-family:Arial,sans-serif;background:#f0f5f2;color:#183b2c}
-header{background:#145f42;color:white;padding:24px 18px}
-header h1{margin:0 0 8px}
-main{max-width:950px;margin:24px auto;padding:0 16px}
-.panel{background:white;border-radius:16px;padding:22px;margin-bottom:18px;box-shadow:0 3px 12px #0000000b}
-h2{margin-top:0}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
-a.link{display:block;padding:18px;border:1px solid #dbe7df;border-radius:12px;text-decoration:none;color:#145f42;background:white}
-a.link strong{display:block;font-size:17px;margin-bottom:8px}
-a.link span{font-size:14px;color:#52675b}
-a.link:hover{border-color:#198754;background:#f7fbf8}
-.note{font-size:14px;color:#52675b;line-height:1.6}
-footer{text-align:center;padding:20px;color:#627368;font-size:13px}
-</style>
-</head>
-<body>
-<header>
-<h1>Smart Chama</h1>
-<div>One platform. Multiple organizations. Secure financial management.</div>
-</header>
-
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f0f5f2;color:#183b2c}header{background:#145f42;color:white;padding:24px 18px}header h1{margin:0 0 8px}main{max-width:950px;margin:24px auto;padding:0 16px}.panel{background:white;border-radius:16px;padding:22px;margin-bottom:18px;box-shadow:0 3px 12px #0000000b}h2{margin-top:0}.primary{display:block;background:#145f42;color:white;padding:16px 18px;border-radius:12px;text-decoration:none;font-weight:700;text-align:center;margin:18px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.module{padding:16px;border:1px solid #dbe7df;border-radius:12px;background:#fff}.module strong{display:block;font-size:17px;margin-bottom:8px;color:#145f42}.module span,.note{font-size:14px;color:#52675b;line-height:1.6}footer{text-align:center;padding:20px;color:#627368;font-size:13px}
+</style></head><body>
+<header><h1>Smart Chama</h1><div>One platform. Multiple organizations. Secure financial management.</div></header>
 <main>
-<section class="panel">
-<h2>Main System</h2>
-<p>Access your Smart Chama workspace using the relevant module below.</p>
-<div class="grid">
-<a class="link" href="smart_chama_supabase_ready-2.html">
-<strong>Member Access</strong>
-<span>Sign in or access your member account.</span>
-</a>
-<a class="link" href="smart_chama_live_dashboard.html">
-<strong>Group Dashboard</strong>
-<span>View group memberships and member information.</span>
-</a>
-<a class="link" href="smart_chama_savings_live.html">
-<strong>Savings & Transactions</strong>
-<span>Submit deposits and view transaction history.</span>
-</a>
-<a class="link" href="smart_chama_deposit_approvals.html">
-<strong>Officer Approvals</strong>
-<span>Review pending deposits and take authorised action.</span>
-</a>
-<a class="link" href="smart_chama_loans.html">
-<strong>Loans &amp; Repayments</strong>
-<span>Apply for loans, review applications when authorized, and view repayment schedules.</span>
-</a>
-<a class="link" href="smart_chama_admin.html">
-<strong>Administration</strong>
-<span>Open the existing administration page.</span>
-</a>
-</div>
-</section>
-
-<section class="panel">
-<h2>Our Platform</h2>
-<p class="note">Smart Chama is being developed to support multiple chamas, organizations and SACCOs through one central platform. Access to financial records and officer functions must be enforced by the database, not just by hiding links on this page.</p>
-<p class="note">Some modules are still under development. Use the relevant pages for their existing functions while the unified login, organization management and role-based navigation are completed.</p>
-</section>
-</main>
-
-<footer>Smart Chama · Central Portal</footer>
-</body>
-</html>
+<section class="panel"><h2>Welcome to Smart Chama</h2><p>One secure sign-in takes each registered user to the workspace for their account, group memberships and assigned role.</p><a class="primary" href="smart_chama_supabase_ready-2.html">Sign in to Smart Chama →</a><p class="note">Members see their own group information and member services. Treasurers, secretaries and committee officers see relevant tools according to their assigned permissions. System administrators receive authorized oversight access.</p></section>
+<section class="panel"><h2>Modules inside the platform</h2><div class="grid">
+<div class="module"><strong>Member Access</strong><span>Secure sign-in and account access.</span></div>
+<div class="module"><strong>Group Dashboard</strong><span>Group memberships and authorized member information.</span></div>
+<div class="module"><strong>Savings & Transactions</strong><span>Deposits, savings records and transaction history.</span></div>
+<div class="module"><strong>Officer Approvals</strong><span>Review pending deposits when authorized.</span></div>
+<div class="module"><strong>Loans & Repayments</strong><span>Loan applications, committee review and repayment schedules.</span></div>
+<div class="module"><strong>Administration</strong><span>Administrative tools for authorized system administrators.</span></div>
+</div></section>
+<section class="panel"><p class="note"><strong>Security:</strong> Menu visibility is not permission. Each module and the Supabase database must independently enforce authorization. Some modules remain under development; no financial action is performed by this landing page.</p></section>
+</main><footer>Smart Chama · Central Portal</footer></body></html>
