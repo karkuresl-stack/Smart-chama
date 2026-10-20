@@ -248,14 +248,16 @@ async function loadDashboard() {
     addWorkspaceLink("My Groups", "smart_chama_live_dashboard.html", "View groups assigned to your account");
     addWorkspaceLink("Savings & Transactions", "smart_chama_savings_live.html", "View savings tools; server permissions apply");
     addWorkspaceLink("Loans & Repayments", "smart_chama_loans.html", "View loan applications and repayment schedules");
-    if (isOwner || hasRole("treasurer", "secretary", "chairperson", "coordinator", "admin", "loan_committee", "committee")) {
+    if (isOwner || hasRole("treasurer", "secretary", "chairperson")) {
       addWorkspaceLink("Officer Approvals", "smart_chama_deposit_approvals.html", "Open officer deposit review tools; authorization is checked by the module and database");
     }
-    if (isOwner || hasRole("secretary", "chairperson", "admin")) {
+    if (isOwner || hasRole("secretary", "chairperson")) {
       addWorkspaceLink("Membership Approvals", "smart_chama_membership_approvals.html", "Open membership review tools; authorization is checked by the module and database");
-      addWorkspaceLink("Group Management", "smart_chama_group_management.html", "Open group management tools; authorization is checked by the module and database");
     }
-    if (isOwner) addWorkspaceLink("Administration", "smart_chama_admin.html", "System administration");
+    if (isOwner) {
+      addWorkspaceLink("Group Management", "smart_chama_group_management.html", "Open system-owner group management tools");
+      addWorkspaceLink("Administration", "smart_chama_admin.html", "System administration");
+    }
 
     let groups = [];
 
