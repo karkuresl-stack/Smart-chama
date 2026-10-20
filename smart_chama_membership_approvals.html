@@ -90,12 +90,15 @@ async function init(){
   const {data:roles,error:roleError}=await timed(
    db.from("chama_member_roles")
     .select("group_id,role")
-    .eq("user_id",user.id)
-    .in("role",["chairperson","secretary"]),
+    .eq("user_id",user.id),
    "reviewer verification"
   );
   if(roleError)throw roleError;
-  reviewGroupIds=[...new Set((roles||[]).map(r=>r.group_id))];
+  reviewGroupIds=[...new Set((roles||[])
+   .filter(r=>["chairperson","secretary"].includes(
+    String(r.role||"").trim().toLowerCase().replace(/[\\s-]+/g,"_")
+   ))
+   .map(r=>r.group_id))];
 
   if(!isOwner&&reviewGroupIds.length===0){
    setStatus("Access denied: your account is not authorized to review membership requests.",true);
