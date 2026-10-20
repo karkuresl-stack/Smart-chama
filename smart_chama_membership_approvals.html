@@ -96,7 +96,7 @@ async function init(){
   if(roleError)throw roleError;
   reviewGroupIds=[...new Set((roles||[])
    .filter(r=>["chairperson","secretary"].includes(
-    String(r.role||"").trim().toLowerCase().replace(/[\\s-]+/g,"_")
+    String(r.role||"").trim().toLowerCase().replace(/[\s-]+/g,"_")
    ))
    .map(r=>r.group_id))];
 
