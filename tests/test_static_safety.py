@@ -9,6 +9,8 @@ LOANS = (ROOT / "smart_chama_loans.html").read_text(encoding="utf-8")
 MEMBER = (ROOT / "smart_chama_supabase_ready-2.html").read_text(encoding="utf-8")
 DASHBOARD = (ROOT / "smart_chama_live_dashboard.html").read_text(encoding="utf-8")
 PORTAL = (ROOT / "smart_chama_main.html").read_text(encoding="utf-8")
+DEPOSIT_APPROVALS = (ROOT / "smart_chama_deposit_approvals.html").read_text(encoding="utf-8")
+MEMBERSHIP_APPROVALS = (ROOT / "smart_chama_membership_approvals.html").read_text(encoding="utf-8")
 PLAN = (ROOT / "docs" / "ISOLATED_TESTING_PLAN.md").read_text(encoding="utf-8")
 
 
@@ -66,6 +68,12 @@ class StaticSafetyChecks(unittest.TestCase):
         self.assertIn("Savings & Transactions", PORTAL)
         self.assertIn("Loans & Repayments", PORTAL)
         self.assertIn("Officer Approvals", PORTAL)
+
+    def test_officer_approval_pages_normalize_role_names(self):
+        self.assertIn('replace(/[\\s-]+/g', DEPOSIT_APPROVALS)
+        self.assertIn('replace(/[\\s-]+/g', MEMBERSHIP_APPROVALS)
+        self.assertIn('["chairperson","secretary"]', MEMBERSHIP_APPROVALS)
+        self.assertIn("officerGroups", DEPOSIT_APPROVALS)
 
     def test_dashboard_normalizes_role_names_and_keeps_server_authorization_authoritative(self):
         self.assertIn('replace(/[\s-]+/g', DASHBOARD)
