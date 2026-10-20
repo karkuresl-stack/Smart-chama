@@ -1,6 +1,8 @@
 from pathlib import Path
 import re
 import unittest
+from html.parser import HTMLParser
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 LOANS = (ROOT / "smart_chama_loans.html").read_text(encoding="utf-8")
@@ -10,7 +12,32 @@ PORTAL = (ROOT / "smart_chama_main.html").read_text(encoding="utf-8")
 PLAN = (ROOT / "docs" / "ISOLATED_TESTING_PLAN.md").read_text(encoding="utf-8")
 
 
+class LocalLinkParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.links = []
+
+    def handle_starttag(self, tag, attrs):
+        for key, value in attrs:
+            if key in ("href", "src") and value:
+                self.links.append((tag, key, value))
+
+
 class StaticSafetyChecks(unittest.TestCase):
+    def test_local_html_links_point_to_existing_files(self):
+        missing = []
+        for page in ROOT.glob("*.html"):
+            parser = LocalLinkParser()
+            parser.feed(page.read_text(encoding="utf-8"))
+            for tag, attr, value in parser.links:
+                parsed = urlsplit(value)
+                if parsed.scheme or parsed.netloc or value.startswith(("#", "data:", "javascript:")):
+                    continue
+                target = (page.parent / parsed.path).resolve()
+                if parsed.path and not target.exists():
+                    missing.append(f"{page.name}: {attr}={value}")
+        self.assertEqual(missing, [], "Broken local HTML links: " + "; ".join(missing))
+
     def test_loan_officer_controls_fail_closed(self):
         self.assertIn('const canReview=!roleResult.error&&authorizedGroups.size>0;', LOANS)
         self.assertIn('$("committeeCard").hidden=!canReview;', LOANS)
