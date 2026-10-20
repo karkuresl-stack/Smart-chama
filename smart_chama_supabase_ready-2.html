@@ -127,8 +127,20 @@ function showApp(email) {
 // Load the Supabase browser client. Real authentication activates after configuration is added.
 const supabaseScript = document.createElement('script');
 supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
-supabaseScript.onload = () => {
-  if (supabaseConfigured) supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+supabaseScript.onload = async () => {
+  if (!supabaseConfigured || !window.supabase) {
+    authMessage.textContent = 'Secure sign-in is unavailable. Refresh the page and try again.';
+    return;
+  }
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+  // Reuse an existing valid session so users do not have to sign in again on every visit.
+  try {
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) throw error;
+    if (data.session?.user) showApp(data.session.user.email);
+  } catch (error) {
+    authMessage.textContent = 'Could not verify your existing session. Please sign in again.';
+  }
 };
  document.head.appendChild(supabaseScript);
 supabaseScript.onerror = () => { authMessage.textContent = 'Could not load the sign-in service. Check your internet connection.'; };
@@ -136,14 +148,23 @@ document.getElementById('loginForm').addEventListener('submit', async e => {
   e.preventDefault();
   const email = document.getElementById('loginEmail').value.trim();
   const password = document.getElementById('loginPassword').value;
+  const submitButton = e.currentTarget.querySelector('button[type="submit"]');
+  if (submitButton) submitButton.disabled = true;
   authMessage.textContent = 'Checking sign-in…';
-  if (!supabaseConfigured || !supabaseClient) {
-    authMessage.textContent = 'Secure sign-in is unavailable because the authentication service has not loaded. Refresh the page and try again. Demo login is disabled.';
-    return;
+  try {
+    if (!supabaseConfigured || !supabaseClient) {
+      throw new Error('Secure sign-in is unavailable because the authentication service has not loaded. Refresh the page and try again. Demo login is disabled.');
+    }
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    if (!data.user) throw new Error('Sign-in did not return a valid user. Please try again.');
+    authMessage.textContent = 'Signed in. Opening your Smart Chama workspace…';
+    showApp(data.user.email);
+  } catch (error) {
+    authMessage.textContent = error.message || 'Sign-in failed. Please check your details and try again.';
+  } finally {
+    if (submitButton) submitButton.disabled = false;
   }
-  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-  if (error) { authMessage.textContent = error.message; return; }
-  authMessage.textContent = ''; showApp(data.user.email);
 });
 document.getElementById('signupBtn').addEventListener('click', async () => {
   const email = document.getElementById('loginEmail').value.trim();
