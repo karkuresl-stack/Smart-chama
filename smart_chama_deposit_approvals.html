@@ -84,8 +84,12 @@ async function loadDeposits() {
     .eq('user_id', sessionData.session.user.id)
     .maybeSingle();
 
+  const normalizedRoles = (roles || []).map(r => ({
+    group_id: r.group_id,
+    role: String(r.role || '').trim().toLowerCase().replace(/[\\s-]+/g, '_')
+  }));
   const officerGroups = groupIds.filter(id =>
-    (roles || []).some(r => r.group_id === id &&
+    normalizedRoles.some(r => r.group_id === id &&
       ['chairperson','secretary','treasurer'].includes(r.role))
   );
 
