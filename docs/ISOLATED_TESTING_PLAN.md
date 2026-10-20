@@ -71,3 +71,24 @@ Read-only advisor checks reported:
 - Performance advisor reports overlapping permissive SELECT policies on `chama_groups`, `chama_member_roles`, `chama_members`, and `savings_transactions`. Review policy semantics and consolidate only with equivalent positive/negative authorization tests.
 - Twelve indexes are reported unused at the time of the snapshot. Do not drop them until query patterns and production usage have been assessed.
 - These checks were read-only. No production SQL, auth settings, records, or policies were changed.
+
+## Privileged RPC review — read-only inventory (2026-10-20)
+A read-only inspection of the 14 advisor-flagged function definitions confirmed that they are SECURITY DEFINER routines and are executable by authenticated users. This advisor finding is not, by itself, proof of an exploit: these routines may be intentionally callable through the client, but each must enforce authorization inside the function.
+
+- **Authorization checks visibly present in the inspected excerpt:** `admin_create_chama_group` checks `auth.uid()` and the system-admin table; `assign_chama_role` restricts role assignment to the group chairperson and requires an active target member; `record_loan_repayment` checks an allowed officer role and requires an active, disbursed loan; `review_loan_application` checks a loan-committee role and rechecks eligibility before approval; `submit_savings_deposit` binds the member ID to `auth.uid()` and validates the amount.
+- **Needs complete-body review before any permission change:** `approve_chama_member`, `officer_approve_savings_deposit`, `officer_delete_pending_deposit`, `officer_reject_savings_deposit`, `owner_assign_group_role`, `owner_update_member_status`, `remove_chama_member`, `request_chama_membership`, and `review_chama_membership`. Their excerpts contain some authentication/authorization logic, but the excerpt-only inspection is not sufficient to certify every branch or side effect.
+- Some older functions set `search_path` to `public`, while newer hardened functions use an empty search path and schema-qualify objects. Review and migrate individually after inspecting the full function body and call sites; do not perform a blanket rewrite.
+- No function definitions, grants, records, or production settings were changed by this inspection.
+
+## Manual acceptance checklist — run only after an isolated backend exists
+Use a dedicated test project/branch and test accounts. Do not use the production project for any write test.
+
+1. **Authentication:** sign in through Member Access, open Dashboard and Loans in the same browser, refresh both, and verify the session remains signed in. Sign out from Dashboard and verify the other page no longer grants access after refresh.
+2. **Member permissions:** a regular member should see only their own permitted information; direct attempts to view another member's roster or submit for another member must fail.
+3. **Loan UI and RPC authorization:** a regular member must not be able to approve/reject applications or record repayments. An assigned officer may review only applications in their group. Approval must not mark funds as disbursed.
+4. **Loan eligibility:** reject zero/negative amounts and amounts above three times current approved savings; confirm approval rechecks savings and generates the schedule. Do not test by creating production applications.
+5. **Repayment:** reject repayments for undistributed/inactive loans, duplicate references, non-positive amounts, and amounts above outstanding balance. Verify schedule allocation and balance after a successful test repayment.
+6. **Daraja sandbox:** use sandbox credentials and a controlled test number; verify callback authentication, checkout ID, amount, phone and receipt checks; replay the same callback and confirm idempotency. Never simulate or manually claim a real payment.
+7. **Security regression:** confirm unauthenticated access is denied, non-member and wrong-group access is denied, and authorized users retain only intended actions. Record screenshots and request IDs without exposing credentials or callback tokens.
+
+**Current test status:** all items above are pending. The production project must remain read-only for testing until a separate backend is available. Do not treat static review or a successful Pages build as end-to-end verification.
