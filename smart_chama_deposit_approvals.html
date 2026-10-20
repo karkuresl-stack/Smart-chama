@@ -84,6 +84,11 @@ async function loadDeposits() {
     .eq('user_id', sessionData.session.user.id)
     .maybeSingle();
 
+  if (isAdmin.error) {
+    message.textContent = 'Could not verify system administrator access: ' + isAdmin.error.message;
+    return;
+  }
+
   const normalizedRoles = (roles || []).map(r => ({
     group_id: r.group_id,
     role: String(r.role || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
@@ -98,10 +103,7 @@ async function loadDeposits() {
     return;
   }
 
-  let query = db.from('savings_transactions')
-    .select('id, member_id, amount, transaction_type, reference, status, transaction_date');
-
-let transactionQuery = db
+  let transactionQuery = db
   .from('savings_transactions')
   .select('id, member_id, amount, transaction_type, reference, status, transaction_date')
   .eq('status', 'pending')
