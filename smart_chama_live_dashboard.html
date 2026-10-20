@@ -54,6 +54,12 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:18px}
     </div>
   </section>
 
+  <section class="card" id="workspaceCard">
+    <h2>Your Smart Chama Workspace</h2>
+    <p class="muted" id="workspaceIntro">Sign in to see the tools available for your account and assigned roles.</p>
+    <div id="workspaceLinks" class="actions"></div>
+  </section>
+
   <section class="card">
     <h2>My Chama Groups</h2>
     <div id="groupsBox"><p class="muted">Connecting...</p></div>
@@ -117,6 +123,8 @@ function resetDashboard() {
   reviewerGroupIds = new Set();
   allowedGroupIds = new Set();
   $("adminLink").classList.add("hidden");
+  $("workspaceLinks").replaceChildren();
+  $("workspaceIntro").textContent = "Sign in to see the tools available for your account and assigned roles.";
   $("logoutBtn").hidden = true;
   $("groupsBox").replaceChildren();
   $("membersBox").textContent = "Sign in to view authorized group information.";
@@ -209,11 +217,47 @@ async function loadDashboard() {
     }
     if (version !== authVersion) return;
 
+    const normalizedRoles = (roleResult.data || []).map(r => ({
+      group_id: r.group_id,
+      role: String(r.role || "").trim().toLowerCase().replace(/[\s-]+/g, "_")
+    }));
     reviewerGroupIds = new Set(
-      (roleResult.data || [])
+      normalizedRoles
         .filter(r => ["chairperson", "secretary"].includes(r.role))
         .map(r => r.group_id)
     );
+
+    // Build convenience navigation from verified account roles. This is not an authorization
+    // boundary: each module and Supabase RLS/RPC must independently enforce access.
+    const roles = [...new Set(normalizedRoles.map(r => r.role))];
+    const hasRole = (...names) => roles.some(role => names.includes(role));
+    const workspaceLinks = $("workspaceLinks");
+    const addWorkspaceLink = (label, href, description) => {
+      const a = document.createElement("a");
+      a.className = "button secondary";
+      a.href = href;
+      a.textContent = label;
+      a.title = description;
+      workspaceLinks.appendChild(a);
+    };
+    $("workspaceIntro").textContent = isOwner
+      ? "System administrator workspace. Use these tools for authorized cross-group oversight."
+      : roles.length
+        ? "Your assigned group role(s): " + roles.map(r => r.replace(/\b\w/g, c => c.toUpperCase()).replace(/_/g, " ")).join(", ") + ". Available tools are shown below."
+        : "Member workspace. You can view your groups and use member services below.";
+    addWorkspaceLink("My Groups", "smart_chama_live_dashboard.html", "View groups assigned to your account");
+    addWorkspaceLink("Savings & Transactions", "smart_chama_savings_live.html", "View savings tools; server permissions apply");
+    addWorkspaceLink("Loans & Repayments", "smart_chama_loans.html", "View loan applications and repayment schedules");
+    if (isOwner || hasRole("treasurer", "secretary", "chairperson")) {
+      addWorkspaceLink("Officer Approvals", "smart_chama_deposit_approvals.html", "Open officer deposit review tools; authorization is checked by the module and database");
+    }
+    if (isOwner || hasRole("secretary", "chairperson")) {
+      addWorkspaceLink("Membership Approvals", "smart_chama_membership_approvals.html", "Open membership review tools; authorization is checked by the module and database");
+    }
+    if (isOwner) {
+      addWorkspaceLink("Group Management", "smart_chama_group_management.html", "Open system-owner group management tools");
+      addWorkspaceLink("Administration", "smart_chama_admin.html", "System administration");
+    }
 
     let groups = [];
 
