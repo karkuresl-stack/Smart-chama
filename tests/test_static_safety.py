@@ -69,6 +69,11 @@ class StaticSafetyChecks(unittest.TestCase):
         self.assertIn("Loans & Repayments", PORTAL)
         self.assertIn("Officer Approvals", PORTAL)
 
+    def test_owner_only_group_management_shortcut(self):
+        self.assertIn('if (isOwner) {', DASHBOARD)
+        self.assertIn('addWorkspaceLink("Group Management", "smart_chama_group_management.html"', DASHBOARD)
+        self.assertIn('if (isOwner || hasRole("secretary", "chairperson"))', DASHBOARD)
+
     def test_officer_approval_pages_normalize_role_names(self):
         self.assertIn('replace(/[\\s-]+/g', DEPOSIT_APPROVALS)
         self.assertIn('replace(/[\\s-]+/g', MEMBERSHIP_APPROVALS)
