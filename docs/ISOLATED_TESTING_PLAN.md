@@ -104,3 +104,10 @@ Use a dedicated test project/branch and test accounts. Do not use the production
 - The run exercised the repository's five static assertions. It does not execute the HTML in a browser, connect to Supabase as a user, or exercise Daraja callbacks.
 - Latest read-only Supabase branch listing still shows only the production project's default `main` branch. No isolated Supabase test database exists yet.
 - Continue treating the GitHub branch as code-only and production as read-only for testing.
+
+## Unified login preparation update (2026-10-20)
+- The central sign-in now checks for an existing Supabase session after the browser client loads and routes an already-authenticated user to the live dashboard.
+- Login submission handles authentication errors, prevents duplicate submits while checking credentials, and routes successful authentication to the same dashboard.
+- Added static assertions for session reuse, sign-in routing, role-normalized workspace navigation, and local HTML link targets.
+- Latest static workflow: https://github.com/karkuresl-stack/Smart-chama/actions/runs/39435205386 (success).
+- These are code/static checks only. They do not prove browser session behavior, production authorization, or financial workflows. Keep the pull request in draft and do not run test signups or financial writes against production.
