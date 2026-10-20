@@ -92,3 +92,9 @@ Use a dedicated test project/branch and test accounts. Do not use the production
 7. **Security regression:** confirm unauthenticated access is denied, non-member and wrong-group access is denied, and authorized users retain only intended actions. Record screenshots and request IDs without exposing credentials or callback tokens.
 
 **Current test status:** all items above are pending. The production project must remain read-only for testing until a separate backend is available. Do not treat static review or a successful Pages build as end-to-end verification.
+
+## Test-branch UI change (2026-10-20)
+- Updated `smart_chama_loans.html` on `testing/isolated-member-access` to check the signed-in user's `chama_member_roles` for the groups where they have an approved membership.
+- The committee-review and repayment sections are hidden unless a recognized loan-officer role is returned. If the role lookup errors, both sections stay hidden (fail-closed UI behavior).
+- This is a usability/defense-in-depth measure only. Database authorization remains authoritative; UI hiding is not a security boundary.
+- Static source verification confirmed the new role gate and both section toggles are present. No browser execution, role-account test, or end-to-end test has been run. This branch remains un-deployed and uses the production Supabase configuration; do not submit/write test data from it.
