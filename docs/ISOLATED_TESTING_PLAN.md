@@ -111,3 +111,6 @@ Use a dedicated test project/branch and test accounts. Do not use the production
 - Added static assertions for session reuse, sign-in routing, role-normalized workspace navigation, and local HTML link targets.
 - Latest static workflow: https://github.com/karkuresl-stack/Smart-chama/actions/runs/39435205386 (success).
 - These are code/static checks only. They do not prove browser session behavior, production authorization, or financial workflows. Keep the pull request in draft and do not run test signups or financial writes against production.
+
+- Follow-up hardening: deposit and membership approval pages normalize role names before applying their UI gates. The dashboard now shows the Group Management shortcut only to verified system owners, matching the page's own access check, and exposes approval shortcuts only to roles the respective modules recognize.
+- Expanded the static suite to check local HTML links and owner-only group-management navigation. Latest workflow passed: https://github.com/karkuresl-stack/Smart-chama/actions/runs/39435610703.
