@@ -1,0 +1,56 @@
+# Smart Chama Isolated Testing Plan
+
+## Purpose
+Test member access and connected modules without deleting or altering existing Smart Chama production records.
+
+## Environment separation
+- Production project: `kbrhjgnwbkszmjldbfor` (Smart chama). Treat as read-only for test setup; never seed demo rows here.
+- Code-only test branch: `testing/isolated-member-access`.
+- A dedicated Supabase database branch is the preferred integration-test target. It must be created only after its quoted hourly cost is approved. It will apply the current schema migrations, but production table data does not carry over.
+- Do not use the separate Kilimanjaro Campus project as a test database; it is a separate project.
+
+## Test data policy
+- Use invented names, test email inboxes controlled by the tester, and non-real phone numbers where accepted by validation.
+- Never use real national ID values, real member phone numbers, actual M-Pesa payments, real receipts, or live financial references.
+- Do not create fake successful Daraja callback evidence or mark payment rows as successful.
+- No production data deletion, truncation, status edits, or financial reconciliation is part of testing.
+
+## Member access acceptance tests
+1. Signed-out visitor can open the portal and member-access page but cannot read group/member financial data.
+2. Demo credentials do not authenticate.
+3. Valid registered user can sign in and is redirected to the live dashboard.
+4. Invalid password and unconfirmed account are handled without exposing sensitive account details.
+5. Password reset only reports generic success and uses the configured HTTPS callback URL.
+6. Sign-out clears the active Supabase session and protected views return to signed-out state.
+7. A new user has no group access until a membership request is approved.
+8. A member sees only their own memberships and permitted group records.
+9. A chairperson/secretary sees roster data only in groups where their role is assigned; removing the role removes access after refresh.
+10. A regular member cannot invoke owner/admin, membership approval, loan review, savings approval, repayment, or disbursement operations.
+
+## Loan integration acceptance tests
+1. The main portal links to the loan page.
+2. The loan page detects the same signed-in Supabase session; signed-out users are directed to member access.
+3. Only active/approved memberships can apply.
+4. Savings eligibility is computed server-side from approved savings transactions; requested amount above three times eligible savings is rejected.
+5. Application review requires a permitted group role and does not itself imply disbursement.
+6. Loan schedules and repayments are visible only to the member and authorized officers under database policy.
+7. Repayment requires an active, previously disbursed loan and a unique verified reference.
+8. No live loan disbursement is attempted in integration testing.
+
+## Security/release gates
+- Enable Supabase leaked-password protection in Auth settings.
+- Review every exposed SECURITY DEFINER function individually; do not blanket grant or revoke permissions without understanding the call path.
+- Keep RLS enabled and test both positive and negative access paths.
+- Verify M-Pesa callback with Daraja sandbox and idempotency tests only after callback credentials and environment are isolated.
+- Do not use production keys, callback tokens, or service-role credentials in browser code or test fixtures.
+- Keep secrets in Supabase Edge Function secrets; rotate callback authentication material if it may have been exposed in logs.
+- Record each test result, environment ref, timestamp, and evidence without storing passwords, tokens, or personal financial data.
+
+## Current limitations to resolve
+- Main portal and loan page now have a navigation link, but shared-session behavior must still be tested in a browser.
+- The legacy member page's former demo login was disabled and successful authentication now redirects to the live dashboard; verify registration, confirmation, reset, and sign-out in the isolated environment.
+- The dashboard and loan page currently point to the production Supabase project. Do not run test signups or seed data against that project. Configure a dedicated test project/branch URL and publishable key for the test build before end-to-end tests.
+- A test database branch has not yet been created because the provider quoted a recurring hourly cost that requires approval.
+
+## Go-live rule
+No production rollout until the isolated tests pass, security advisor findings are triaged, Daraja callbacks are verified in sandbox, and all user-facing modules are confirmed to share the correct authenticated session.
