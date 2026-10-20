@@ -121,14 +121,8 @@ if (supabaseConfigured && window.supabase) {
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 }
 function showApp(email) {
-  document.getElementById('loginScreen').style.display='none';
-  document.getElementById('app').style.display='grid';
-  document.getElementById('mobileNav').style.display='';
-  const name = email || 'Member';
-  document.querySelector('.user-info b').textContent = name;
-  document.querySelector('.user-info span').textContent = 'Signed-in member';
-  document.querySelector('.avatar').textContent = (name[0] || 'M').toUpperCase();
-  navigate('dashboard');
+  // Never expose the legacy sample-data dashboard after real authentication.
+  window.location.replace('smart_chama_live_dashboard.html');
 }
 // Load the Supabase browser client. Real authentication activates after configuration is added.
 const supabaseScript = document.createElement('script');
@@ -144,8 +138,7 @@ document.getElementById('loginForm').addEventListener('submit', async e => {
   const password = document.getElementById('loginPassword').value;
   authMessage.textContent = 'Checking sign-in…';
   if (!supabaseConfigured || !supabaseClient) {
-    if (email === 'demo' && password === 'chama123') { authMessage.textContent = ''; showApp('Demo Administrator'); return; }
-    authMessage.textContent = 'Supabase is not configured yet. For the demo only, use username demo and password chama123. Do not use real credentials in demo mode.';
+    authMessage.textContent = 'Secure sign-in is unavailable because the authentication service has not loaded. Refresh the page and try again. Demo login is disabled.';
     return;
   }
   const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
