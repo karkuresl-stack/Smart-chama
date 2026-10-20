@@ -86,7 +86,7 @@ async function loadDeposits() {
 
   const normalizedRoles = (roles || []).map(r => ({
     group_id: r.group_id,
-    role: String(r.role || '').trim().toLowerCase().replace(/[\\s-]+/g, '_')
+    role: String(r.role || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
   }));
   const officerGroups = groupIds.filter(id =>
     normalizedRoles.some(r => r.group_id === id &&
