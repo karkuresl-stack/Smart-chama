@@ -34,7 +34,7 @@ class StaticSafetyChecks(unittest.TestCase):
         self.assertIn("Officer Approvals", PORTAL)
 
     def test_dashboard_normalizes_role_names_and_keeps_server_authorization_authoritative(self):
-        self.assertIn('replace(/[\\\\s-]+/g, "_")', DASHBOARD)
+        self.assertIn('replace(/[\\s-]+/g, "_")', DASHBOARD)
         self.assertIn('if (isOwner || hasRole("treasurer", "secretary", "chairperson"', DASHBOARD)
         self.assertIn("each module and Supabase RLS/RPC must independently enforce access", DASHBOARD)
 
