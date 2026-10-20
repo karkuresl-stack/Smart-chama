@@ -27,6 +27,13 @@ class StaticSafetyChecks(unittest.TestCase):
         self.assertNotRegex(MEMBER, re.compile(r"chama123", re.IGNORECASE))
         self.assertNotRegex(MEMBER, re.compile(r"demo\s*/\s*chama123", re.IGNORECASE))
 
+    def test_unified_login_reuses_valid_session_and_routes_after_authentication(self):
+        self.assertIn("supabaseClient.auth.getSession()", MEMBER)
+        self.assertIn("if (data.session?.user) showApp(data.session.user.email)", MEMBER)
+        self.assertIn("supabaseClient.auth.signInWithPassword({ email, password })", MEMBER)
+        self.assertIn("smart_chama_live_dashboard.html", MEMBER)
+        self.assertIn("catch (error)", MEMBER)
+
     def test_portal_keeps_existing_modules_and_routes_to_single_login(self):
         self.assertIn('href="smart_chama_supabase_ready-2.html"', PORTAL)
         self.assertIn("Savings & Transactions", PORTAL)
