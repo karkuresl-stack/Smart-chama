@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[1]
 LOANS = (ROOT / "smart_chama_loans.html").read_text(encoding="utf-8")
 MEMBER = (ROOT / "smart_chama_supabase_ready-2.html").read_text(encoding="utf-8")
+LOANS = (ROOT / "smart_chama_loans.html").read_text(encoding="utf-8")
 DASHBOARD = (ROOT / "smart_chama_live_dashboard.html").read_text(encoding="utf-8")
 PORTAL = (ROOT / "smart_chama_main.html").read_text(encoding="utf-8")
 DEPOSIT_APPROVALS = (ROOT / "smart_chama_deposit_approvals.html").read_text(encoding="utf-8")
@@ -73,6 +74,10 @@ class StaticSafetyChecks(unittest.TestCase):
         self.assertIn('if (isOwner) {', DASHBOARD)
         self.assertIn('addWorkspaceLink("Group Management", "smart_chama_group_management.html"', DASHBOARD)
         self.assertIn('if (isOwner || hasRole("secretary", "chairperson"))', DASHBOARD)
+
+    def test_loan_review_normalizes_role_names(self):
+        self.assertIn('replace(/[\\\\s-]+/g, "_")', LOANS)
+        self.assertIn('"loan_committee"', LOANS)
 
     def test_officer_approval_pages_normalize_role_names(self):
         self.assertIn('replace(/[\\s-]+/g', DEPOSIT_APPROVALS)
