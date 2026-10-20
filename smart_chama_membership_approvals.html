@@ -56,7 +56,7 @@ function setStatus(message,isError=false){
 }
 function timed(p,label,ms=12000){
  return Promise.race([p,new Promise((_,reject)=>
-  setTimeout(()=>reject(new Error(p+" timed out")),ms))]);
+  setTimeout(()=>reject(new Error(label+" timed out")),ms))]);
 }
 function node(tag,text,cls){
  const n=document.createElement(tag);
