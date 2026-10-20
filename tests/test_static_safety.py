@@ -79,6 +79,11 @@ class StaticSafetyChecks(unittest.TestCase):
         self.assertIn('replace(/[\\\\s-]+/g, "_")', LOANS)
         self.assertIn('"loan_committee"', LOANS)
 
+    def test_deposit_queue_is_scoped_to_authorized_groups_and_admin_errors_fail_closed(self):
+        self.assertIn("transactionQuery = transactionQuery.in('group_id', officerGroups)", DEPOSIT_APPROVALS)
+        self.assertIn("if (isAdmin.error)", DEPOSIT_APPROVALS)
+        self.assertNotIn("transactionQuery.in('member_id', allowedMemberIds)", DEPOSIT_APPROVALS)
+
     def test_officer_approval_pages_normalize_role_names(self):
         self.assertIn('replace(/[\\s-]+/g', DEPOSIT_APPROVALS)
         self.assertIn('replace(/[\\s-]+/g', MEMBERSHIP_APPROVALS)
