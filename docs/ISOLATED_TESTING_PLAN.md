@@ -98,3 +98,9 @@ Use a dedicated test project/branch and test accounts. Do not use the production
 - The committee-review and repayment sections are hidden unless a recognized loan-officer role is returned. If the role lookup errors, both sections stay hidden (fail-closed UI behavior).
 - This is a usability/defense-in-depth measure only. Database authorization remains authoritative; UI hiding is not a security boundary.
 - Static source verification confirmed the new role gate and both section toggles are present. No browser execution, role-account test, or end-to-end test has been run. This branch remains un-deployed and uses the production Supabase configuration; do not submit/write test data from it.
+
+## Automated static-check result (2026-10-20)
+- GitHub Actions workflow `Smart Chama Test-Branch Static Safety Checks` completed successfully for commit `c3399f8288f83e0fcab011773e5954d5d2cd4754` (run ID `39429434100`).
+- The run exercised the repository's five static assertions. It does not execute the HTML in a browser, connect to Supabase as a user, or exercise Daraja callbacks.
+- Latest read-only Supabase branch listing still shows only the production project's default `main` branch. No isolated Supabase test database exists yet.
+- Continue treating the GitHub branch as code-only and production as read-only for testing.
