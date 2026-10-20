@@ -84,8 +84,17 @@ async function loadDeposits() {
     .eq('user_id', sessionData.session.user.id)
     .maybeSingle();
 
+  if (isAdmin.error) {
+    message.textContent = 'Could not verify system administrator access: ' + isAdmin.error.message;
+    return;
+  }
+
+  const normalizedRoles = (roles || []).map(r => ({
+    group_id: r.group_id,
+    role: String(r.role || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  }));
   const officerGroups = groupIds.filter(id =>
-    (roles || []).some(r => r.group_id === id &&
+    normalizedRoles.some(r => r.group_id === id &&
       ['chairperson','secretary','treasurer'].includes(r.role))
   );
 
@@ -94,10 +103,7 @@ async function loadDeposits() {
     return;
   }
 
-  let query = db.from('savings_transactions')
-    .select('id, member_id, amount, transaction_type, reference, status, transaction_date');
-
-let transactionQuery = db
+  let transactionQuery = db
   .from('savings_transactions')
   .select('id, member_id, amount, transaction_type, reference, status, transaction_date')
   .eq('status', 'pending')
@@ -105,28 +111,15 @@ let transactionQuery = db
   .order('transaction_date', { ascending: false })
   .limit(100);
 
+if (isAdmin.error) {
+  message.textContent = 'Could not verify system administrator access: ' + isAdmin.error.message;
+  return;
+}
+
 if (!isAdmin.data) {
-  const { data: groupMembers, error: groupMembersError } = await db
-    .from('chama_members')
-    .select('user_id')
-    .in('group_id', officerGroups)
-    .eq('status', 'active');
-
-  if (groupMembersError) {
-    message.textContent = 'Could not load group members: ' + groupMembersError.message;
-    return;
-  }
-
-  const allowedMemberIds = [
-    ...new Set((groupMembers || []).map(m => m.user_id))
-  ];
-
-  if (allowedMemberIds.length === 0) {
-    message.textContent = 'No active members found in your officer groups.';
-    return;
-  }
-
-  transactionQuery = transactionQuery.in('member_id', allowedMemberIds);
+  // Scope the data query by group_id itself. Filtering only by member_id can
+  // expose another group's transactions when a member belongs to multiple groups.
+  transactionQuery = transactionQuery.in('group_id', officerGroups);
 }
 
 const { data, error } = await transactionQuery;
