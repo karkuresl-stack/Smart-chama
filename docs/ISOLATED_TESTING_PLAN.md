@@ -6,7 +6,7 @@ Test member access and connected modules without deleting or altering existing S
 ## Environment separation
 - Production project: `kbrhjgnwbkszmjldbfor` (Smart chama). Treat as read-only for test setup; never seed demo rows here.
 - Code-only test branch: `testing/isolated-member-access`.
-- A dedicated Supabase database branch is the preferred integration-test target. It must be created only after its quoted hourly cost is approved. It will apply the current schema migrations, but production table data does not carry over.
+- A dedicated Supabase database branch is the preferred integration-test target. The quoted cost was explicitly approved, but Supabase rejected creation because branching requires the Pro plan or above. No test branch was created. If the plan is upgraded, create a fresh branch; it applies schema migrations but does not copy production table data. Until then, continue code-only tests and do not use production for test signups or fixtures.
 - Do not use the separate Kilimanjaro Campus project as a test database; it is a separate project.
 
 ## Test data policy
@@ -50,7 +50,7 @@ Test member access and connected modules without deleting or altering existing S
 - Main portal and loan page now have a navigation link, but shared-session behavior must still be tested in a browser.
 - The legacy member page's former demo login was disabled and successful authentication now redirects to the live dashboard; verify registration, confirmation, reset, and sign-out in the isolated environment.
 - The dashboard and loan page currently point to the production Supabase project. Do not run test signups or seed data against that project. Configure a dedicated test project/branch URL and publishable key for the test build before end-to-end tests.
-- A test database branch has not yet been created because the provider quoted a recurring hourly cost that requires approval.
+- A test database branch has not yet been created: the user approved the quoted $0.01344/hour cost, but Supabase returned a plan restriction (Pro or above required). Production records remain untouched. The stale demo-login instructions were removed on the testing branch; verify the rendered page and login flow before release.
 
 ## Go-live rule
 No production rollout until the isolated tests pass, security advisor findings are triaged, Daraja callbacks are verified in sandbox, and all user-facing modules are confirmed to share the correct authenticated session.
