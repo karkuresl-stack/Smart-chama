@@ -54,3 +54,10 @@ Test member access and connected modules without deleting or altering existing S
 
 ## Go-live rule
 No production rollout until the isolated tests pass, security advisor findings are triaged, Daraja callbacks are verified in sandbox, and all user-facing modules are confirmed to share the correct authenticated session.
+
+
+## Code review notes (2026-10-20)
+- The member-access and loan pages both use the same Supabase project URL and publishable key. Supabase JS clients normally share the browser's persisted auth session for the same project and origin; this is a code-level expectation, not a completed browser test.
+- The loan page currently shows committee-review and repayment controls before the database has established whether the current user is authorized. Database RPC authorization remains the actual security boundary, but the UI should be role-gated to reduce confusion and avoid presenting privileged actions to ordinary members.
+- The loan page currently loads the production project configuration. Do not perform test signups, loan submissions, review decisions, or repayment writes from this page until a separate test backend is configured.
+- No browser-based end-to-end tests have been run in this environment. Mark tests as pending rather than passed until there is an isolated backend and test account.
