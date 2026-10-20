@@ -219,7 +219,7 @@ async function loadDashboard() {
 
     const normalizedRoles = (roleResult.data || []).map(r => ({
       group_id: r.group_id,
-      role: String(r.role || "").trim().toLowerCase().replace(/[\\s-]+/g, "_")
+      role: String(r.role || "").trim().toLowerCase().replace(/[\s-]+/g, "_")
     }));
     reviewerGroupIds = new Set(
       normalizedRoles
@@ -243,7 +243,7 @@ async function loadDashboard() {
     $("workspaceIntro").textContent = isOwner
       ? "System administrator workspace. Use these tools for authorized cross-group oversight."
       : roles.length
-        ? "Your assigned group role(s): " + roles.map(r => r.replace(/\\b\\w/g, c => c.toUpperCase()).replace(/_/g, " ")).join(", ") + ". Available tools are shown below."
+        ? "Your assigned group role(s): " + roles.map(r => r.replace(/\b\w/g, c => c.toUpperCase()).replace(/_/g, " ")).join(", ") + ". Available tools are shown below."
         : "Member workspace. You can view your groups and use member services below.";
     addWorkspaceLink("My Groups", "smart_chama_live_dashboard.html", "View groups assigned to your account");
     addWorkspaceLink("Savings & Transactions", "smart_chama_savings_live.html", "View savings tools; server permissions apply");
